@@ -1,5 +1,8 @@
-// dwcagent parses a Darwin Core recordedBy / identifiedBy string and prints
-// each name as a JSON array.
+// dwcagent parses and cleans a Darwin Core recordedBy / identifiedBy string
+// and prints each name as a JSON array. Mirrors the behaviour of the Ruby
+// DwcAgent gem: DwcAgent.parse(input).map { |n| DwcAgent.clean(n) }
+//
+// Names that reduce to DwcAgent.default (all-nil) after cleaning are omitted.
 //
 // Usage: dwcagent "13267 (male) W.J. Cody; 13268 (female) W.E. Kemp"
 package main
@@ -18,8 +21,17 @@ func main() {
 		os.Exit(1)
 	}
 	input := os.Args[1]
-	names := dwcagent.Parse(input)
-	out, err := json.Marshal(names)
+
+	parsed := dwcagent.Parse(input)
+	cleaned := make([]dwcagent.Name, 0, len(parsed))
+	for _, n := range parsed {
+		c := dwcagent.Clean(n)
+		if !c.IsDefault() {
+			cleaned = append(cleaned, c)
+		}
+	}
+
+	out, err := json.Marshal(cleaned)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
