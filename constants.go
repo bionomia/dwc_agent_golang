@@ -148,7 +148,11 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b\s*name\b`),
 	regexp.MustCompile(`(?i)\b\s*lost\b`),
 	regexp.MustCompile(`(?i)nswobs`),
-	regexp.MustCompile(`ORCID`),
+	// Strip ORCID label and its digit string "0000-0001-2345-6789" together
+	// so the dashes are removed before spaceDashSpaceRe fires.
+	regexp.MustCompile(`(?i)ORCID[\s\d-]*`),
+	// Also strip bare ORCID digit sequences that appear without the label.
+	regexp.MustCompile(`\b\d{4}-\d{4}-\d{4}-\d{4}\b`),
 	regexp.MustCompile(`MRI[\s-]PAS`),
 	regexp.MustCompile(`urn:qm\.qld\.gov\.au:collector`),
 	regexp.MustCompile(`(?i)University\s+of\s+(?:Southern\s+)?California(?:,\s+Berkeley)?`),
@@ -219,6 +223,13 @@ func postStripTidy(s string) string {
 // ─────────────────────────────────────────────────────────────────────────────
 var splitByPipeRe = regexp.MustCompile(`\s*\|\s*`)
 
+// spaceDashSpaceRe matches Ruby's SPLIT_BY \s+-\s+ separator.
+// Spaces on both sides are required so hyphenated names ("García-López")
+// and attached suffixes ("-jr") are not broken.
+// Replacement is " | " (a pipe) so it is treated as a name boundary by
+// processComplexSeps and parseNames, matching Ruby's behaviour exactly.
+var spaceDashSpaceRe = regexp.MustCompile(`\s+-\s+`)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Complex separator substitutions (COMPLEX_SEPARATORS in Ruby).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -258,6 +269,7 @@ func applyComplexSeparators(s string) string {
 // BLACKLIST regex (applied to DisplayOrder of a parsed name)
 // ─────────────────────────────────────────────────────────────────────────────
 var blacklistRe = regexp.MustCompile(`(?i)` +
+	`\bherb\b|` +
 	`abundant|` +
 	`adult|juvenile|` +
 	`administra(?:d|t)or|` +

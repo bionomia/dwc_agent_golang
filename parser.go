@@ -25,6 +25,10 @@ func Parse(input string) []Name {
 	// 3. Apply character substitutions (turns many separators into " | ").
 	s = applyCharSubs(s)
 
+	// 3b. Convert space-dash-space to " | " — mirrors Ruby's SPLIT_BY \s+-\s+.
+	//     Done after charSubs so "-jr"/"-Jr" suffix fixes have already fired.
+	s = spaceDashSpaceRe.ReplaceAllString(s, " | ")
+
 	// 4. Apply complex separator substitutions per pipe-segment.
 	s = processComplexSeps(s)
 
