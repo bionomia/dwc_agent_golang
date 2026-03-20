@@ -67,6 +67,9 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`["'-]{2,}`),
 	regexp.MustCompile(`-\.\s`),
 	regexp.MustCompile(`(?i)[,;]?\s*(?:1st|2nd|3rd|[4-9]th)`),
+	// Collection/specimen codes like "AL-30.5T", "HUH-4.2b" — strip before
+	// the decimal pattern fires so the trailing dash is not left as an orphan.
+	regexp.MustCompile(`\b[A-Z]{2,}-[\d.]+[A-Za-z]*\b`),
 	regexp.MustCompile(`[,]?\s*?\d+\.\d+`),
 	regexp.MustCompile(`[,]?\s*\([#NnOo.\s0-9-]*[0-9a-z]+\)\s*$`),
 	regexp.MustCompile(`[,]?\s+#[0-9a-z]+$`),
@@ -229,6 +232,14 @@ var splitByPipeRe = regexp.MustCompile(`\s*\|\s*`)
 // Replacement is " | " (a pipe) so it is treated as a name boundary by
 // processComplexSeps and parseNames, matching Ruby's behaviour exactly.
 var spaceDashSpaceRe = regexp.MustCompile(`\s+-\s+`)
+
+// conjunctionSepRe splits on conjunction words used as name separators,
+// mirroring Ruby's SPLIT_BY \b(con|e|y|i|en|et|or|per|for|und)\b.
+// Spaces on both sides are required so particles like "den", "van", "von"
+// and name fragments like "en" inside "Anderson" are not split.
+// Must be applied AFTER processComplexSeps so shared-family patterns like
+// "J. et K. Smith" are expanded before "et" becomes a pipe separator.
+var conjunctionSepRe = regexp.MustCompile(`(?i)\s+\b(con|e|y|i|en|et|or|per|for|und|and|with)\b\s+`)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Complex separator substitutions (COMPLEX_SEPARATORS in Ruby).

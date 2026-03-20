@@ -41,6 +41,13 @@ func Parse(input string) []Name {
 	//     "J. & K. Smith" are expanded correctly before "&" becomes a pipe.
 	s = strings.ReplaceAll(s, " & ", " | ")
 
+	// 4c. Split on conjunction words — mirrors Ruby's SPLIT_BY which includes
+	//     \b(con|e|y|i|en|et|or|per|for|und)\b as name separators.
+	//     "i" splits Catalan names: "A. Gòmez-Bolea i A. Longàn".
+	//     Must run AFTER processComplexSeps so shared-family patterns like
+	//     "J. et K. Smith" are handled before "et" becomes a pipe.
+	s = conjunctionSepRe.ReplaceAllString(s, " | ")
+
 	// 5. Remove residual trailing commas/semicolons.
 	s = residualTerminatorsRe.ReplaceAllString(s, "")
 

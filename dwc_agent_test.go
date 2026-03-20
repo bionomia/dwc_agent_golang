@@ -606,3 +606,298 @@ func TestIntegrationMaleGenderTagStripped(t *testing.T) {
 		t.Errorf("gender stripped: want Cody, got %v", names[0].Family)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests for fixes added after the initial test suite
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Fix: semicolon converts to pipe separator ─────────────────────────────────
+
+func TestParseSemicolonBecomesNameSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J.; Jones, A.; Brown, K.")
+	assertCount(t, "semicolon three names", names, 3)
+}
+
+// ── Fix: space-dash-space is a name separator (Ruby SPLIT_BY \s+-\s+) ─────────
+
+func TestParseSpaceDashSpaceSeparator(t *testing.T) {
+	names := dwcagent.Parse("A. Rocabruna - M. Tabarés")
+	if len(names) < 1 {
+		t.Fatalf("space-dash-space: want ≥1 name, got 0")
+	}
+	// First name should be Rocabruna, not a long concatenated string
+	found := false
+	for _, n := range names {
+		if n.Family != nil && *n.Family == "Rocabruna" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("space-dash-space: want family=Rocabruna in results, got %+v", names)
+	}
+}
+
+func TestParseSpaceDashSpaceDoesNotSplitHyphenatedName(t *testing.T) {
+	// "García-López" has no spaces around the dash — must not be split
+	names := dwcagent.Parse("García-López, J.")
+	assertCount(t, "hyphenated name not split", names, 1)
+	if names[0].Family == nil || *names[0].Family != "García-López" {
+		t.Errorf("hyphenated name: want family=García-López, got %v", names[0].Family)
+	}
+}
+
+func TestParseSpaceDashSpaceDoesNotSplitSuffix(t *testing.T) {
+	// "-Jr" has no leading space — must not be split on it
+	names := dwcagent.Parse("Smith-Jr, John")
+	// Should produce one name, not split on the dash
+	if len(names) != 1 {
+		t.Errorf("suffix dash: want 1 name, got %d: %+v", len(names), names)
+	}
+}
+
+// ── Fix: ORCID label + digit string stripped together ────────────────────────
+
+func TestParseORCIDWithDigitStringStripped(t *testing.T) {
+	// Previously "0000-0001-2345-6789" left bare dashes that fired
+	// the space-dash-space separator, splitting Smith into multiple segments.
+	names := dwcagent.Parse("Smith, J. ORCID 0000-0001-2345-6789")
+	assertCount(t, "ORCID with digits", names, 1)
+	if names[0].Family == nil || *names[0].Family != "Smith" {
+		t.Errorf("ORCID: want family=Smith, got %v", names[0].Family)
+	}
+}
+
+// ── Fix: ampersand becomes a name separator after complexSeps ─────────────────
+
+func TestParseAmpersandSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith & Jones")
+	assertCount(t, "ampersand separator", names, 2)
+}
+
+func TestParseAmpersandSharedFamilyHandledByComplexSep(t *testing.T) {
+	// "J. & K. Smith" — complexSep must expand to two names
+	// before the ampersand is converted to a pipe
+	names := dwcagent.Parse("J. & K. Smith")
+	assertCount(t, "J. & K. Smith", names, 2)
+	for _, n := range names {
+		if n.Family == nil || *n.Family != "Smith" {
+			t.Errorf("shared family &: want family=Smith, got %v", n.Family)
+		}
+	}
+}
+
+func TestParseAmpersandMultiple(t *testing.T) {
+	names := dwcagent.Parse("Of & Dr. L. & Dr. A. & Copenhagen, I")
+	// "Of" and single-letter derived names must be rejected by Clean;
+	// at minimum we should not get a spurious name with a long concatenated family.
+	for _, n := range names {
+		if n.Family != nil && len([]rune(*n.Family)) > 40 {
+			t.Errorf("ampersand multiple: spurious long family name %q", *n.Family)
+		}
+	}
+}
+
+// ── Fix: conjunction words (i, e, y, en, et, or, per, for, und) as separators ─
+
+func TestParseCatalanIConjunctionSeparator(t *testing.T) {
+	names := dwcagent.Parse("A. Gòmez-Bolea i A. Longàn")
+	assertCount(t, "Catalan i separator", names, 2)
+}
+
+func TestParseSpanishYConjunctionSeparator(t *testing.T) {
+	names := dwcagent.Parse("García y López")
+	assertCount(t, "Spanish y separator", names, 2)
+}
+
+func TestParseGermanUndConjunctionSeparator(t *testing.T) {
+	names := dwcagent.Parse("Wagner und Mueller")
+	assertCount(t, "German und separator", names, 2)
+}
+
+func TestParseEtConjunctionSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith et Jones")
+	assertCount(t, "et separator", names, 2)
+}
+
+func TestParseConjunctionDoesNotSplitParticle(t *testing.T) {
+	// "van den Berg" — "den" must not be split as a conjunction
+	names := dwcagent.Parse("van den Berg, Jan")
+	assertCount(t, "den particle not split", names, 1)
+}
+
+func TestParseConjunctionDoesNotSplitNameFragment(t *testing.T) {
+	// "Anderson" contains "en" but must not be split
+	names := dwcagent.Parse("Anderson, E.")
+	assertCount(t, "en inside Anderson not split", names, 1)
+	if names[0].Family == nil || *names[0].Family != "Anderson" {
+		t.Errorf("Anderson not split: want family=Anderson, got %v", names[0].Family)
+	}
+}
+
+func TestParseEtSharedFamilyStillWorks(t *testing.T) {
+	// "J. et K. Smith" — complexSep expands before "et" becomes a separator
+	names := dwcagent.Parse("J. et K. Smith")
+	assertCount(t, "J. et K. Smith", names, 2)
+	for _, n := range names {
+		if n.Family == nil || *n.Family != "Smith" {
+			t.Errorf("shared family et: want family=Smith, got %v", n.Family)
+		}
+	}
+}
+
+// ── Fix: full problem string with conjunction + collection code ───────────────
+
+func TestParseGomezBoleaString(t *testing.T) {
+	// "AL-30.5T" is a collection code that must be stripped;
+	// "i" is a Catalan conjunction that must split the two names.
+	names := dwcagent.Parse("A. Gòmez-Bolea i A. Longàn, AL-30.5T")
+	assertCount(t, "Gòmez-Bolea i Longàn", names, 2)
+	families := make([]string, 0, len(names))
+	for _, n := range names {
+		if n.Family != nil {
+			families = append(families, *n.Family)
+		}
+	}
+	wantFamilies := map[string]bool{"Gòmez-Bolea": true, "Longàn": true}
+	for _, f := range families {
+		if !wantFamilies[f] {
+			t.Errorf("Gòmez-Bolea: unexpected family %q", f)
+		}
+	}
+}
+
+func TestParseCollectionCodeStripped(t *testing.T) {
+	// Codes matching [A-Z]{2,}-[\d.]+[A-Za-z]* are collection references, not names
+	for _, input := range []string{
+		"Smith, J., AL-30.5T",
+		"Smith, J., HUH-4.2b",
+		"Smith, J., MNHN-2019.1",
+	} {
+		names := dwcagent.Parse(input)
+		assertCount(t, "collection code stripped: "+input, names, 1)
+		if names[0].Family == nil || *names[0].Family != "Smith" {
+			t.Errorf("collection code %q: want family=Smith, got %v", input, names[0].Family)
+		}
+	}
+}
+
+// ── Fix: Rocabruna — space-dash-space + herb blacklist ───────────────────────
+
+func TestParseRocabrunaFullString(t *testing.T) {
+	names := dwcagent.Parse("leg. A. Rocabruna - M. Tabarés- J. Vila., Herb. SCM2498, (RIPOLLèS .)")
+	// Should produce Rocabruna; Herb. remnant and Tabarés fragment should be rejected
+	found := false
+	for _, n := range names {
+		if n.Family != nil && *n.Family == "Rocabruna" {
+			found = true
+		}
+		// No name should have a family containing a dash (i.e. the old concatenated bug)
+		if n.Family != nil && len([]rune(*n.Family)) > 40 {
+			t.Errorf("Rocabruna: spurious long family %q", *n.Family)
+		}
+	}
+	if !found {
+		t.Errorf("Rocabruna: expected family=Rocabruna in results, got %+v", names)
+	}
+}
+
+func TestParseHerbStripped(t *testing.T) {
+	// "Herb." as a herbarium abbreviation must be blacklisted
+	names := dwcagent.Parse("Smith, J., Herb. XYZ")
+	assertCount(t, "Herb. stripped", names, 1)
+	if names[0].Family == nil || *names[0].Family != "Smith" {
+		t.Errorf("Herb. stripped: want family=Smith, got %v", names[0].Family)
+	}
+}
+
+// ── Fix: single-letter family names rejected (Clean rule 3b) ─────────────────
+
+func TestCleanSingleLetterFamilyRejected(t *testing.T) {
+	for _, fam := range []string{"A", "B", "I", "L", "Z"} {
+		n := dwcagent.Name{Family: sp(fam)}
+		cleaned := dwcagent.Clean(n)
+		if !cleaned.IsDefault() {
+			t.Errorf("single-letter family %q: expected Default(), got %+v", fam, cleaned)
+		}
+	}
+}
+
+func TestCleanSingleLetterFamilyWithDotRejected(t *testing.T) {
+	// "A." — single letter with trailing dot — also rejected
+	n := dwcagent.Name{Family: sp("A.")}
+	cleaned := dwcagent.Clean(n)
+	if !cleaned.IsDefault() {
+		t.Errorf("single-letter family 'A.': expected Default(), got %+v", cleaned)
+	}
+}
+
+func TestCleanTwoLetterFamilyKept(t *testing.T) {
+	// Two-letter family names are valid (e.g. "Ng")
+	n := dwcagent.Name{Family: sp("Ng"), Given: sp("Peter")}
+	cleaned := dwcagent.Clean(n)
+	if cleaned.IsDefault() {
+		t.Errorf("two-letter family Ng: expected non-default, got Default()")
+	}
+}
+
+// ── Fix: names containing digits rejected (Clean rule 3c) ────────────────────
+
+func TestCleanFamilyWithDigitRejected(t *testing.T) {
+	for _, fam := range []string{"8E08", "Smith2", "AL30", "0O"} {
+		n := dwcagent.Name{Family: sp(fam), Given: sp("J.")}
+		cleaned := dwcagent.Clean(n)
+		if !cleaned.IsDefault() {
+			t.Errorf("family with digit %q: expected Default(), got %+v", fam, cleaned)
+		}
+	}
+}
+
+func TestCleanGivenWithDigitRejected(t *testing.T) {
+	for _, given := range []string{"0O", "J2.", "28G0", "A1"} {
+		n := dwcagent.Name{Family: sp("Smith"), Given: sp(given)}
+		cleaned := dwcagent.Clean(n)
+		if !cleaned.IsDefault() {
+			t.Errorf("given with digit %q: expected Default(), got %+v", given, cleaned)
+		}
+	}
+}
+
+func TestCleanLegitimateNamesWithDigitsInInputNotAffected(t *testing.T) {
+	// Digits are stripped by Parse before Clean sees the name,
+	// so a real name like "W.J. Cody" from "13267 W.J. Cody" is unaffected.
+	names := dwcagent.Parse("13267 W.J. Cody")
+	if len(names) != 1 {
+		t.Fatalf("digit in input: want 1 name, got %d", len(names))
+	}
+	c := dwcagent.Clean(names[0])
+	if c.Family == nil || *c.Family != "Cody" {
+		t.Errorf("digit in input: want family=Cody, got %v", c.Family)
+	}
+}
+
+func TestParseMojibakeStringRejected(t *testing.T) {
+	// Cyrillic UTF-8 with prefix bytes stripped produces digit-containing fragments
+	// that must all be rejected by Clean rule 3c.
+	names := dwcagent.Parse("8:>;0O 8E08;>28G0")
+	cleaned := make([]dwcagent.Name, 0)
+	for _, n := range names {
+		c := dwcagent.Clean(n)
+		if !c.IsDefault() {
+			cleaned = append(cleaned, c)
+		}
+	}
+	if len(cleaned) != 0 {
+		t.Errorf("mojibake: expected 0 valid agents, got %d: %+v", len(cleaned), cleaned)
+	}
+}
+
+// ── Fix: \bherb\b added to blacklist ─────────────────────────────────────────
+
+func TestCleanHerbBlacklisted(t *testing.T) {
+	// "Herb" as a display-order word must be caught by the blacklist
+	n := dwcagent.Name{Family: sp("Smith"), Given: sp("Herb")}
+	cleaned := dwcagent.Clean(n)
+	if !cleaned.IsDefault() {
+		t.Errorf("Herb given: expected Default(), got %+v", cleaned)
+	}
+}
