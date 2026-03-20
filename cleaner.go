@@ -33,6 +33,16 @@ func Clean(n Name) Name {
 		}
 	}
 
+	// 3b. Reject single-letter family names (with or without trailing dot).
+	//     These arise from parsing artifacts like "Dr. A." -> family="A" or "A."
+	//     and are never meaningful agent names.
+	if n.Family != nil {
+		fam := strings.TrimRight(*n.Family, ".")
+		if len([]rune(fam)) == 1 {
+			return Default()
+		}
+	}
+
 	// 4. Given too long (>35 runes).
 	if n.Given != nil && len([]rune(*n.Given)) > 35 {
 		return Default()

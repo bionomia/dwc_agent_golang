@@ -30,7 +30,16 @@ func Parse(input string) []Name {
 	s = spaceDashSpaceRe.ReplaceAllString(s, " | ")
 
 	// 4. Apply complex separator substitutions per pipe-segment.
+	//    The complex patterns handle cases like "J. & K. Smith" (shared family)
+	//    by consuming the "&" before step 4b fires.
 	s = processComplexSeps(s)
+
+	// 4b. Convert any remaining " & " to " | ".
+	//     Any "&" not consumed by complexSeparators is a simple name separator,
+	//     mirroring Ruby's Namae which splits on "&" as part of its SPLIT_BY.
+	//     Must run AFTER processComplexSeps so shared-family patterns like
+	//     "J. & K. Smith" are expanded correctly before "&" becomes a pipe.
+	s = strings.ReplaceAll(s, " & ", " | ")
 
 	// 5. Remove residual trailing commas/semicolons.
 	s = residualTerminatorsRe.ReplaceAllString(s, "")
