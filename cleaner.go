@@ -43,6 +43,19 @@ func Clean(n Name) Name {
 		}
 	}
 
+	// 3c. Reject names where family or given contains a digit.
+	//     Human names never contain digits. Tokens with digits are artefacts:
+	//     specimen codes, mojibake (e.g. Cyrillic UTF-8 with prefix bytes
+	//     stripped leaving printable ASCII fragments like "8E08" or "0O"),
+	//     or accession numbers that survived the stripOut pass.
+	hasDigit := regexp.MustCompile(`\d`)
+	if n.Family != nil && hasDigit.MatchString(*n.Family) {
+		return Default()
+	}
+	if n.Given != nil && hasDigit.MatchString(*n.Given) {
+		return Default()
+	}
+
 	// 4. Given too long (>35 runes).
 	if n.Given != nil && len([]rune(*n.Given)) > 35 {
 		return Default()
