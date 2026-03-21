@@ -1,6 +1,8 @@
 # dwc_agent_golang
 Ruby-based human name parser, https://github.com/bionomia/dwc_agent ported to Go using Claude
 
+[![Build Status](https://github.com/bionomia/dwc_agent_golang/actions/workflows/go.yml/badge.svg)](https://github.com/bionomia/dwc_agent_golang/actions)
+
 ## Run tests
 ```go
 go test ./...
