@@ -153,6 +153,15 @@ func Clean(n Name) Name {
 		g := *n.Given
 		n.Family = strPtr(strings.TrimSuffix(g, "."))
 		n.Given = nil
+		// Re-check rule 3b: the promoted value may itself be a single letter
+		// (e.g. given="A." → family="A"), which rule 3b could not catch earlier
+		// because family was nil at that point.
+		if n.Family != nil {
+			fam := strings.TrimRight(*n.Family, ".")
+			if len([]rune(fam)) == 1 {
+				return Default()
+			}
+		}
 	}
 
 	// 16. Normalize initials spacing.

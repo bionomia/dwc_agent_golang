@@ -667,6 +667,15 @@ func TestParseORCIDWithDigitStringStripped(t *testing.T) {
 	}
 }
 
+func TestParseORCIDBareDigitStringStripped(t *testing.T) {
+	// ORCID digits without the label word
+	names := dwcagent.Parse("Smith, J. 0000-0001-2345-6789")
+	assertCount(t, "bare ORCID digits", names, 1)
+	if names[0].Family == nil || *names[0].Family != "Smith" {
+		t.Errorf("bare ORCID digits: want family=Smith, got %v", names[0].Family)
+	}
+}
+
 // ── Fix: ampersand becomes a name separator after complexSeps ─────────────────
 
 func TestParseAmpersandSeparator(t *testing.T) {
@@ -831,6 +840,15 @@ func TestCleanSingleLetterFamilyWithDotRejected(t *testing.T) {
 	}
 }
 
+func TestCleanSingleLetterPromotedFromGivenRejected(t *testing.T) {
+	// "Dr. A." parses to given="A.", no family -> Clean promotes to family="A" -> reject
+	n := dwcagent.Name{Given: sp("A.")}
+	cleaned := dwcagent.Clean(n)
+	if !cleaned.IsDefault() {
+		t.Errorf("single-letter promoted from given: expected Default(), got %+v", cleaned)
+	}
+}
+
 func TestCleanTwoLetterFamilyKept(t *testing.T) {
 	// Two-letter family names are valid (e.g. "Ng")
 	n := dwcagent.Name{Family: sp("Ng"), Given: sp("Peter")}
@@ -899,5 +917,196 @@ func TestCleanHerbBlacklisted(t *testing.T) {
 	cleaned := dwcagent.Clean(n)
 	if !cleaned.IsDefault() {
 		t.Errorf("Herb given: expected Default(), got %+v", cleaned)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests for full Ruby SPLIT_BY coverage
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Punctuation separators (splitByPunctuationRe) ────────────────────────────
+
+func TestParseDoubleCommaSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith,, Jones")
+	if len(names) < 2 {
+		t.Errorf("double comma: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseEnDashSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith – Jones")
+	if len(names) < 2 {
+		t.Errorf("en-dash: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseColonSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. : Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("colon: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseCatalanASeparator(t *testing.T) {
+	// "a." is a Catalan/Portuguese word meaning "and" used in collector strings
+	names := dwcagent.Parse("Gòmez-Bolea a. Longàn")
+	if len(names) < 2 {
+		t.Errorf("Catalan a.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+// ── Verb/role phrase separators (splitByVerbRe) ───────────────────────────────
+
+func TestParseDetSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. det. Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("det.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseDetBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. det. by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("det. by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseIdentifiedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. identified by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("identified by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseConfirmedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. confirmed by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("confirmed by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseAnnotatedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. annotated by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("annotated by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseCheckedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. checked by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("checked by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseVerifSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. verif. Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("verif.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseVerifieeSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. vérifiée Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("vérifiée: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseVerifieeparSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. vérifiée par Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("vérifiée par: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseCommSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. comm. Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("comm.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseRedetSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. redet. Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("redet.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseReidentifiedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. reidentified by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("reidentified by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseDuplSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. dupl. Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("dupl.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseExaminedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. examined by Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("examined by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseInCollSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith, J. in coll. Jones, A.")
+	if len(names) < 2 {
+		t.Errorf("in coll.: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseViaSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith via Jones")
+	if len(names) < 2 {
+		t.Errorf("via: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseFromSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith from Jones")
+	if len(names) < 2 {
+		t.Errorf("from: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseByBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith donated by Jones")
+	if len(names) < 2 {
+		t.Errorf("donated by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseConfirmadaPorSeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith confirmada por Jones")
+	if len(names) < 2 {
+		t.Errorf("confirmada por: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseSwedishOchSeparator(t *testing.T) {
+	names := dwcagent.Parse("Andersson och Lindqvist")
+	if len(names) < 2 {
+		t.Errorf("Swedish och: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParseThenBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith then by Jones")
+	if len(names) < 2 {
+		t.Errorf("then by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+func TestParsePurchasedBySeparator(t *testing.T) {
+	names := dwcagent.Parse("Smith purchased by Jones")
+	if len(names) < 2 {
+		t.Errorf("purchased by: want ≥2 names, got %d: %+v", len(names), names)
 	}
 }

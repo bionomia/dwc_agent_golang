@@ -42,11 +42,22 @@ func Parse(input string) []Name {
 	s = strings.ReplaceAll(s, " & ", " | ")
 
 	// 4c. Split on conjunction words — mirrors Ruby's SPLIT_BY which includes
-	//     \b(con|e|y|i|en|et|or|per|for|und)\b as name separators.
-	//     "i" splits Catalan names: "A. Gòmez-Bolea i A. Longàn".
+	//     \b(con|e|y|i|en|et|or|per|for|und|och)\b as name separators.
+	//     "i" splits Catalan, "och" splits Swedish, etc.
 	//     Must run AFTER processComplexSeps so shared-family patterns like
 	//     "J. et K. Smith" are handled before "et" becomes a pipe.
 	s = conjunctionSepRe.ReplaceAllString(s, " | ")
+
+	// 4d. Split on role/verb phrases — mirrors Ruby's SPLIT_BY verb entries:
+	//     "det.", "identified by", "confirmed by", "ex.", "verified", etc.
+	//     These phrases introduce a new agent in a collector chain.
+	//     Must run AFTER processComplexSeps for the same reason as 4c.
+	s = splitByVerbRe.ReplaceAllString(s, " | ")
+
+	// 4e. Split on remaining punctuation separators — mirrors Ruby's SPLIT_BY
+	//     [–|ǀ∣｜│&+\/;:] for the cases not yet handled:
+	//     en-dash (–), colon (:), and the Catalan "a." separator.
+	s = splitByPunctuationRe.ReplaceAllString(s, " | ")
 
 	// 5. Remove residual trailing commas/semicolons.
 	s = residualTerminatorsRe.ReplaceAllString(s, "")

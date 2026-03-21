@@ -67,6 +67,11 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`["'-]{2,}`),
 	regexp.MustCompile(`-\.\s`),
 	regexp.MustCompile(`(?i)[,;]?\s*(?:1st|2nd|3rd|[4-9]th)`),
+	// ORCID digit sequences must be stripped FIRST, before any other digit or
+	// dash pattern fires and breaks the 4×4 structure that the pattern relies on.
+	// e.g. \d*[A-Za-z]*\d*-\d*$ would strip "-6789" from the end first, leaving
+	// "0000-0001-2345-" which no longer matches \b\d{4}-\d{4}-\d{4}-\d{4}\b.
+	regexp.MustCompile(`\b\d{4}-\d{4}-\d{4}-\d{4}\b`),
 	// Collection/specimen codes like "AL-30.5T", "HUH-4.2b" — strip before
 	// the decimal pattern fires so the trailing dash is not left as an orphan.
 	regexp.MustCompile(`\b[A-Z]{2,}-[\d.]+[A-Za-z]*\b`),
@@ -153,9 +158,9 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)nswobs`),
 	// Strip ORCID label and its digit string "0000-0001-2345-6789" together
 	// so the dashes are removed before spaceDashSpaceRe fires.
+	// The bare digit pattern \b\d{4}-\d{4}-\d{4}-\d{4}\b is handled earlier
+	// (before \b\d{2,}\b) so it is not duplicated here.
 	regexp.MustCompile(`(?i)ORCID[\s\d-]*`),
-	// Also strip bare ORCID digit sequences that appear without the label.
-	regexp.MustCompile(`\b\d{4}-\d{4}-\d{4}-\d{4}\b`),
 	regexp.MustCompile(`MRI[\s-]PAS`),
 	regexp.MustCompile(`urn:qm\.qld\.gov\.au:collector`),
 	regexp.MustCompile(`(?i)University\s+of\s+(?:Southern\s+)?California(?:,\s+Berkeley)?`),
@@ -239,7 +244,46 @@ var spaceDashSpaceRe = regexp.MustCompile(`\s+-\s+`)
 // and name fragments like "en" inside "Anderson" are not split.
 // Must be applied AFTER processComplexSeps so shared-family patterns like
 // "J. et K. Smith" are expanded before "et" becomes a pipe separator.
-var conjunctionSepRe = regexp.MustCompile(`(?i)\s+\b(con|e|y|i|en|et|or|per|for|und|and|with)\b\s+`)
+var conjunctionSepRe = regexp.MustCompile(`(?i)\s+\b(con|e|y|i|en|et|or|per|for|und|and|with|och)\b\s+`)
+
+// splitByVerbRe mirrors the verb/role phrases in Ruby's SPLIT_BY.
+// Each phrase introduces a new agent in a collector chain.
+// Note: no trailing \b — many phrases end in "." which is not a word char.
+// A trailing \s+ is required, so the phrase must be surrounded by whitespace.
+var splitByVerbRe = regexp.MustCompile(
+	`(?i)\s+(?:` +
+	`annotated(?:\s+by)?|` +
+	`checked?(?:\s+by)?|` +
+	`comm\.?|` +
+	`communicate?d(?:\s+to)?|` +
+	`conf\.?(?:\s+by)?|confirmed(?:\s+by)?|` +
+	`confirmada(?:\s+por)?|` +
+	`det\.?(?:\s+by)?|` +
+	`(?:donated\s+)?by|` +
+	`dupl?\.?(?:\s+by)?|duplicate(?:\s+by)?|` +
+	`ex\.?(?:\s+by)?|examined(?:\s+by)?|` +
+	`in?dentified(?:\s+by)?|` +
+	`in\s+coll\.?|` +
+	`in\s+part(?:\s+by)?|` +
+	`prep\.?(?:\s+by)?|` +
+	`purchased?(?:\s+by)?|` +
+	`redet\.?(?:\s+by)?|` +
+	`reidentified(?:\s+by)?|` +
+	`then(?:\s+by)?|` +
+	`veri?f?\.?:?(?:\s+by)?|` +
+	`v(?:e|é)rifi(?:e|é)e?d?(?:\s+(?:by|par))?|` +
+	`via|from` +
+	`)\s+`)
+
+// splitByPunctuationRe covers the single-character and Unicode separators
+// from Ruby's SPLIT_BY [–|ǀ∣｜│&+\/;:] plus the "a." Catalan separator
+// and [;,]{2,} (multiple semicolons or commas).
+// en-dash (–), colon (:), and double-separators were previously missing.
+// Note: single & and ; are already handled earlier in the pipeline.
+var splitByPunctuationRe = regexp.MustCompile(
+	`\s+a\.\s+|` +
+	`[;,]{2,}|` +
+	`[–:]`)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Complex separator substitutions (COMPLEX_SEPARATORS in Ruby).
