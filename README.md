@@ -1,5 +1,5 @@
 # dwc_agent_golang
-DwC Agent parser ported to Go using Claude
+Ruby-based human name parser, https://github.com/bionomia/dwc_agent ported to Go using Claude
 
 ## Run tests
 ```go
