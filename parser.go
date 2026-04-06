@@ -35,29 +35,29 @@ func Parse(input string) []Name {
 	s = processComplexSeps(s)
 
 	// 4b. Convert any remaining " & " to " | ".
-	//     Any "&" not consumed by complexSeparators is a simple name separator,
-	//     mirroring Ruby's Namae which splits on "&" as part of its SPLIT_BY.
-	//     Must run AFTER processComplexSeps so shared-family patterns like
-	//     "J. & K. Smith" are expanded correctly before "&" becomes a pipe.
 	s = strings.ReplaceAll(s, " & ", " | ")
 
-	// 4c. Split on conjunction words — mirrors Ruby's SPLIT_BY which includes
-	//     \b(con|e|y|i|en|et|or|per|for|und|och)\b as name separators.
-	//     "i" splits Catalan, "och" splits Swedish, etc.
-	//     Must run AFTER processComplexSeps so shared-family patterns like
-	//     "J. et K. Smith" are handled before "et" becomes a pipe.
+	// 4c. Split on conjunction words.
 	s = conjunctionSepRe.ReplaceAllString(s, " | ")
 
-	// 4d. Split on role/verb phrases — mirrors Ruby's SPLIT_BY verb entries:
-	//     "det.", "identified by", "confirmed by", "ex.", "verified", etc.
-	//     These phrases introduce a new agent in a collector chain.
-	//     Must run AFTER processComplexSeps for the same reason as 4c.
+	// 4c2. Re-apply complex separators after conjunction split, so patterns like
+	//      "N. Navarro, G. Gómez" (created when 'y' split off 'A Ferreira') are
+	//      detected as display-order comma lists.
+	s = processComplexSeps(s)
+
+	// 4d. Split on role/verb phrases mid-string.
 	s = splitByVerbRe.ReplaceAllString(s, " | ")
 
-	// 4e. Split on remaining punctuation separators — mirrors Ruby's SPLIT_BY
-	//     [–|ǀ∣｜│&+\/;:] for the cases not yet handled:
-	//     en-dash (–), colon (:), and the Catalan "a." separator.
+	// 4e. Split on remaining punctuation separators.
 	s = splitByPunctuationRe.ReplaceAllString(s, " | ")
+
+	// 4f. Strip leading verb phrases from each pipe-segment.
+	//     "via Serena Lowartz" → "Serena Lowartz"
+	//     "by P. Zika" → "P. Zika"
+	//     "prep. C.J. Guiguet" → "C.J. Guiguet"
+	//     These appear at the start of a segment after splitting (or as the
+	//     entire input), and should leave a single name rather than two.
+	s = stripLeadingVerbsPerSegment(s)
 
 	// 5. Remove residual trailing commas/semicolons.
 	s = residualTerminatorsRe.ReplaceAllString(s, "")
@@ -84,6 +84,28 @@ func processComplexSeps(s string) string {
 		}
 		seg = applyComplexSeparators(seg)
 		out = append(out, seg)
+	}
+	return strings.Join(out, " | ")
+}
+
+// stripLeadingVerbsPerSegment strips leading and trailing verb/role phrases from
+// each pipe-delimited segment.
+// Leading: "via", "by", "prep.", "annotated" → leaves the name that follows
+// Trailing: "checked", "annotated", "verified" → left after colon-split
+func stripLeadingVerbsPerSegment(s string) string {
+	segments := splitByPipeRe.Split(s, -1)
+	out := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		seg = splitByVerbAtStartRe.ReplaceAllString(seg, "")
+		seg = splitByVerbAtEndRe.ReplaceAllString(seg, "")
+		seg = strings.TrimSpace(seg)
+		if seg != "" {
+			out = append(out, seg)
+		}
 	}
 	return strings.Join(out, " | ")
 }

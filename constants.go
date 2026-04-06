@@ -79,8 +79,13 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`[,]?\s*\([#NnOo.\s0-9-]*[0-9a-z]+\)\s*$`),
 	regexp.MustCompile(`[,]?\s+#[0-9a-z]+$`),
 	regexp.MustCompile(`(?i)[,]?\s*#*\s+\d+[-/\s][A-Z\d]+-?\d*[A-Za-z]*$`),
+	// Numeric dates "21-12-1971" BEFORE the trailing-dash strip so the full
+	// date is removed as a unit rather than piece by piece.
+	regexp.MustCompile(`\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b`),
 	regexp.MustCompile(`\d*[A-Za-z]*\d*-\d*$`),
 	regexp.MustCompile(`\b\d+\(?[[:alpha:]]\)?\b`),
+	// Slash-date "20/Aug./1980" — must be before digit strips so digits not consumed first
+	regexp.MustCompile(`(?i)\d+\s*/\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*/\s*\d+`),
 	regexp.MustCompile(`\b\d{2,}\b`),  // strip standalone numbers (specimen IDs etc.)
 	regexp.MustCompile(`[,;\s]+(?:et\.?\s+al|&\s+al)l?\.?`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*etal\.?`),
@@ -98,8 +103,9 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b[,;]?\s*ann?onymous\b`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*\(?(?:undetermined|indeterminable|dummy|interim|accession|ill(?:eg|is)ible|scripsit|presumably?)\)?\b`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*(?:importer|gift):?\b`),
+	// "person string" as a complete phrase (also covers "Person String" alone)
+	regexp.MustCompile(`(?i)\bperson\s*string\b`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*string\b`),
-	regexp.MustCompile(`(?i)\b[,;]?\s*person\s*string\b`),
 	regexp.MustCompile(`(?i)^colln?\.?\s+|\s*colln?\.?\s*$`),
 	regexp.MustCompile(`(?i)^collection:?\s+|\s*collection\s*$`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*colls\.(?:\b|$)`),
@@ -107,6 +113,8 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^dupl[.,]+`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*stet[,!]?\s*\d*$`),
 	regexp.MustCompile(`(?i)[,;]?\s*\d+[-/\s](?:\d+|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*[-/\s]?\d+`),
+	// Also strip "20/Aug./1980" form where month is surrounded by slashes
+	regexp.MustCompile(`(?i)\d+\s*/\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*/\s*\d+`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*(?:Jan|January|janvier)[.,;]?\s*\d+`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*(?:Feb|February|f(?:é|e)vrier)[.,;]?\s*\d+`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*(?:Mar|March|mars)[.,;]?\s*\d+`),
@@ -134,8 +142,12 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\b[-.,;:/]?\s*(?:Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Evergreen|Florida|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New\s+Hampshire|New\s+Jersey|New\s+Mexico|New\s+York|North\s+Carolina|North\s+Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Portland|Rhode\s+Island|South\s+Carolina|South\s+Dakota|St\s+Petersburg|Tennessee|Texas|Utah|Vermont|Washington|West\s+Virginia|Wisconsin|Wyoming)\s+State\s*\b`),
 	regexp.MustCompile(`(?i)\b[.,;:/]?\s*(?:Afghanistan|Albania|Algeria|Australia|Austria|Azerbaijan|Bahamas|Bangladesh|Belarus|Belgium|Bolivia|Brazil|Bulgaria|Cambodia|Canada|Chile|China|Colombia|Croatia|Cuba|Cyprus|Denmark|Ecuador|Egypt|Finland|France|Germany|Ghana|Greece|Guatemala|Haiti|Hungary|Iceland|India|Indonesia|Iran|Iraq|Ireland|Israel|Italy|Jamaica|Japan|Kazakhstan|Kenya|Latvia|Lebanon|Libya|Lithuania|Luxembourg|Malaysia|Mexico|Mongolia|Morocco|Mozambique|Myanmar|Nepal|Netherlands|New\s+Zealand|Nicaragua|Nigeria|Norway|Oman|Pakistan|Panama|Paraguay|Peru|Philippines|Poland|Portugal|Qatar|Romania|Russia(?:n\s+Federation)?|Rwanda|Saudi\s+Arabia|Senegal|Serbia|Singapore|Slovakia|Slovenia|Somalia|South\s+Africa|South\s+Sudan|Spain|Sri\s+Lanka|Sudan|Sweden|Switzerland|Syria|Taiwan|Tanzania|Thailand|Tunisia|Turkey|Uganda|Ukraine|United\s+Arab\s+Emirates|United\s+Kingdom|United\s+States(?:\s+of\s+America)?|Uruguay|Uzbekistan|Venezuela|Vietnam|Yemen|Zambia|Zimbabwe)\b`),
 	regexp.MustCompile(`(?i)autres?\s+de|probab|likely|possibl(?:e|y)|doubtful`),
-	regexp.MustCompile(`(?i)\b\s*maybe\s*\b`),
+	// "maybe" as a standalone suffix word — but not when it's part of a name
+	// like "Maybee". Only strip when preceded by a space (not at start).
+	regexp.MustCompile(`(?i)\s+maybe\b`),
 	regexp.MustCompile(`(?i)\b\s*prob\.\s*\b`),
+	// Strip leading "prob." at the very start of a segment too
+	regexp.MustCompile(`(?i)^prob\.?\s+`),
 	regexp.MustCompile(`(?i)\b\s*field\s*number`),
 	regexp.MustCompile(`(?i)\b\s*(?:malaise|light|pitfall|pan|suction|lobster|actinic\s+light|cdc|fisherm(?:a|e)n)\s*trap\s*\b`),
 	regexp.MustCompile(`(?i)\|\s*collector\s*(?:field\s*)?number.*$`),
@@ -170,7 +182,7 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)museums?\s+victoria`),
 	regexp.MustCompile(`(?i)\b\s*(?:united\s+states|russia)\s*\b`),
 	regexp.MustCompile(`(?i)revised|photograph|fruits\s+only`),
-	regexp.MustCompile(`(?i)-?\s*sight\s+(?:id|identifi?cation)\.?\s*\b`),
+	regexp.MustCompile(`(?i)-?\s*sight\s+(?:identifi?cation|id)\.?\s*\b`),
 	regexp.MustCompile(`(?i)-?\s*synonym(?:y|ie)`),
 	regexp.MustCompile(`(?i)\b\s*\(?(?:fe)?male\)?\s*\b`),
 	regexp.MustCompile(`(?i)\bto\s+(?:sub)?spp?\.?`),
@@ -184,14 +196,48 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)no\s+coll\.?(?:ector)?`),
 	regexp.MustCompile(`(?i)not?\s+(?:name|date|details?|specific)?\s*(?:given|name|date|noted)`),
 	regexp.MustCompile(`(?i)non?\s+specificato`),
-	regexp.MustCompile(`\b[,;]\s+\d+\.?$`),
+	// Strip "year Month" or "Month year" trailing date fragments not caught above
+	// e.g. "2006 May", "2006 may", "May 2013"
+	regexp.MustCompile(`(?i)\b\d{4}\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b`),
+	regexp.MustCompile(`(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{4}\b`),
+	// Strip "no disponible" (Spanish for not available)
+	regexp.MustCompile(`(?i)\bno\s+disponible\b`),
+	// Strip "& CI team", "& others", "& party" type trailing institutional suffixes
+	regexp.MustCompile(`(?i)\s*&\s+[A-Z]{2,}\s+(?:team|group|party|crew|staff)\b`),
+	// Strip "North Dakota State University" and similar "State University" combos
+	regexp.MustCompile(`(?i)\b(?:North\s+Dakota|South\s+Dakota|Iowa|Ohio|Penn(?:sylvania)?|Michigan|Oregon|Arizona|Utah|Kansas|Colorado|Florida|Kentucky|Georgia|Virginia|Louisiana|Alabama|Mississippi|Tennessee|Indiana|Minnesota|Wisconsin|Oklahoma|Missouri|Arkansas|Nebraska|Wyoming|Montana|Idaho|Nevada|Vermont|Maine|Delaware|Hawaii|Alaska)\s+State\s+University\b`),
+	// Strip trailing month name when it follows a comma (month in given position)
+	// e.g. "Jacques, Avril décembre 2013" — "décembre" is left after digit strip
+	// Add months to the already-present strips but also match when not followed by digit
+	// (standalone month at end of string after a name):
+	regexp.MustCompile(`(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|janvier|f[eé]vrier|mars|avril|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre)\s*$`),
+	// Strip "checked:" with no space before name (colon acts as separator but
+	// the word "checked" must also be removed from segment start)
+	regexp.MustCompile(`(?i)^checked?\s*:`),
+	// Strip trailing verb words at end of a segment (mirrors verb_start but for endings)
+	// e.g. "C.E. Garton 1980 checked" after the colon splits off the rest
+	regexp.MustCompile(`(?i)\s+(?:checked?|annotated?|confirmed?|verified?|det|redet|verif)\s*$`),
+	// Strip "Jan. N" date pattern: month-abbrev followed by day number
+	regexp.MustCompile(`(?i)\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s+\d+[,.]?\s*\d*$`),
+	// Strip "N Month" at string start (e.g. "on 15 January" leaves "January")
+	regexp.MustCompile(`(?i)^\d+\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b`),
+	// Strip "North Dakota State" (residual from "North Dakota State University" after
+	// university strip, where only "State" is left and "North Dakota" precedes it)
+	regexp.MustCompile(`(?i)\bNorth\s+Dakota\s+State\b`),
+	// Strip standalone "State" when it follows a place name stripped by earlier patterns
+	regexp.MustCompile(`(?i)^State$`),
 	regexp.MustCompile(`[!@?]\s*-?\s*`),
 	regexp.MustCompile(`(?i)\d{1,4}[/.]?(?:i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)[/.]\d{1,4}`),
 	regexp.MustCompile(`[,;]$`),
 	regexp.MustCompile(`^\w{0,2}$`),
 	regexp.MustCompile(`^[A-Z]{2,}$`),
 	regexp.MustCompile(`(?i)annot\.?\s*?\b`),
-	regexp.MustCompile(`(?i)\s+stet\s*!?\s*$`),
+	// stet[!,] only at end of string or before a digit (year) — NOT mid-word.
+	// "Kronenstet" should not match. Allow optional spaces before "!" too.
+	regexp.MustCompile(`(?i)\s+stet[\s!,]*\d*$`),
+	// Strip standalone month abbreviation at end of string (no following digit)
+	// e.g. "C.J. Bird Aug." left after the slash-date strip above
+	regexp.MustCompile(`(?i)\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*$`),
 	regexp.MustCompile(`(?i)\s+prep\.?\s*$`),
 	regexp.MustCompile(`[({].*?[)}]`),
 	regexp.MustCompile(`\s+\[[\w\s?.-]{10,}\]`),
@@ -207,6 +253,8 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(?:ex\.?|in)\s+(?:he?r?b)\.?\s+.*$`),
 	regexp.MustCompile(`(?i):?\s*exch(?:\b|$)`),
 	regexp.MustCompile(`\s+de\s*$`),
+	// Strip trailing isolated dot (e.g. after bracket removal: "Holm, E .")
+	regexp.MustCompile(`\s+\.\s*$`),
 	regexp.MustCompile(`\.{2,}$`),
 }
 
@@ -238,13 +286,14 @@ var splitByPipeRe = regexp.MustCompile(`\s*\|\s*`)
 // processComplexSeps and parseNames, matching Ruby's behaviour exactly.
 var spaceDashSpaceRe = regexp.MustCompile(`\s+-\s+`)
 
-// conjunctionSepRe splits on conjunction words used as name separators,
-// mirroring Ruby's SPLIT_BY \b(con|e|y|i|en|et|or|per|for|und)\b.
-// Spaces on both sides are required so particles like "den", "van", "von"
-// and name fragments like "en" inside "Anderson" are not split.
-// Must be applied AFTER processComplexSeps so shared-family patterns like
-// "J. et K. Smith" are expanded before "et" becomes a pipe separator.
-var conjunctionSepRe = regexp.MustCompile(`(?i)\s+\b(con|e|y|i|en|et|or|per|for|und|and|with|och)\b\s+`)
+// conjunctionSepRe splits on conjunction words used as name separators.
+// Multi-letter conjunctions (and, et, och, etc.) are case-insensitive via (?i:...).
+// Single-letter conjunctions (e, y, i) are case-SENSITIVE — they must be lowercase
+// so that uppercase initials like "A Y Jackson" or "Jack E Smith" are never split.
+// Go's RE2 supports (?i:...) inline flag groups.
+var conjunctionSepRe = regexp.MustCompile(
+	`(?i:\s+\b(?:con|en|et|or|per|for|und|and|with|och)\b\s+)` +
+		`|\s+[eyi]\s+`)
 
 // splitByVerbRe mirrors the verb/role phrases in Ruby's SPLIT_BY.
 // Each phrase introduces a new agent in a collector chain.
@@ -252,38 +301,74 @@ var conjunctionSepRe = regexp.MustCompile(`(?i)\s+\b(con|e|y|i|en|et|or|per|for|
 // A trailing \s+ is required, so the phrase must be surrounded by whitespace.
 var splitByVerbRe = regexp.MustCompile(
 	`(?i)\s+(?:` +
-	`annotated(?:\s+by)?|` +
-	`checked?(?:\s+by)?|` +
+	`annotated?(?:\s+by)?|` +
+	`checked?(?:\s*[:\s]by)?|` +
 	`comm\.?|` +
-	`communicate?d(?:\s+to)?|` +
-	`conf\.?(?:\s+by)?|confirmed(?:\s+by)?|` +
-	`confirmada(?:\s+por)?|` +
+	`communicat\w*(?:\s+to)?|` +         // covers "communicatd to" typo
+	`conf\.?(?:\s+by)?|confirmed?(?:\s+by)?|` +
+	`confirmada?(?:\s+por)?|` +
 	`det\.?(?:\s+by)?|` +
 	`(?:donated\s+)?by|` +
 	`dupl?\.?(?:\s+by)?|duplicate(?:\s+by)?|` +
-	`ex\.?(?:\s+by)?|examined(?:\s+by)?|` +
-	`in?dentified(?:\s+by)?|` +
+	`ex\.?(?:\s+by)?|examined?(?:\s+by)?|` +
+	`in?dentified?(?:\s+by)?|` +
 	`in\s+coll\.?|` +
 	`in\s+part(?:\s+by)?|` +
+	`per|` +
 	`prep\.?(?:\s+by)?|` +
 	`purchased?(?:\s+by)?|` +
-	`redet\.?(?:\s+by)?|` +
-	`reidentified(?:\s+by)?|` +
+	`redet\.?(?:\s+by)?|reidentified?(?:\s+by)?|` +
+	`stet[!,]?\s*|` +                    // "stet" as mid-string separator
 	`then(?:\s+by)?|` +
-	`veri?f?\.?:?(?:\s+by)?|` +
-	`v(?:e|é)rifi(?:e|é)e?d?(?:\s+(?:by|par))?|` +
+	`ver\.?(?:\s+by)?|veri?f?\.?:?(?:\s+by)?|` +
+	`v(?:e|é)rifi(?:e|é)e?d?(?:\s+(?:by|par))?|v[eé]rifi[eé]\s*|` +
 	`via|from` +
 	`)\s+`)
+
+// splitByVerbAtStartRe strips verb phrases that appear at the very beginning
+// of a segment (before the first name), e.g. "via Serena Lowartz",
+// "by P. Zika", "annotated Yves Archambault", "prep. C.J. Guiguet".
+// These leave a single name rather than creating a split.
+var splitByVerbAtStartRe = regexp.MustCompile(
+	`(?i)^(?:` +
+	`stet[!,]?|` +
+	`annotated?(?:\s+by)?|` +
+	`checked?(?:\s+by)?|` +
+	`comm\.?|` +
+	`communicat\w*(?:\s+to)?|` +
+	`conf\.?(?:\s+by)?|confirmed?(?:\s+by)?|` +
+	`det\.?(?:\s+by)?|` +
+	`(?:donated\s+)?by|` +
+	`dupl?\.?(?:\s+by)?|` +
+	`ex\.?(?:\s+by)?|examined?(?:\s+by)?|` +
+	`in?dentified?(?:\s+by)?|` +
+	`in\s+coll\.?|` +
+	`per|` +
+	`prep\.?(?:\s+by)?|` +
+	`redet\.?(?:\s+by)?|` +
+	`ver\.?(?:\s+by)?|veri?f?\.?:?(?:\s+by)?|` +
+	`v(?:e|é)rifi(?:e|é)e?d?(?:\s+(?:by|par))?|v[eé]rifi[eé]\s*|` +
+	`via` +
+	`)\s+`)
+
+// splitByVerbAtEndRe strips verb/role words that appear at the end of a segment.
+// e.g. "C.E. Garton checked" (after the colon-split strips the rest)
+var splitByVerbAtEndRe = regexp.MustCompile(
+	`(?i)\s+(?:` +
+	`annotated?|checked?|confirmed?|det|redet|verif(?:ied)?|verified?` +
+	`)\s*$`)
 
 // splitByPunctuationRe covers the single-character and Unicode separators
 // from Ruby's SPLIT_BY [–|ǀ∣｜│&+\/;:] plus the "a." Catalan separator
 // and [;,]{2,} (multiple semicolons or commas).
 // en-dash (–), colon (:), and double-separators were previously missing.
 // Note: single & and ; are already handled earlier in the pipeline.
+// Slash (/) is also a separator (e.g. "O.Bennedict/G.J. Spencer").
 var splitByPunctuationRe = regexp.MustCompile(
 	`\s+a\.\s+|` +
 	`[;,]{2,}|` +
-	`[–:]`)
+	`[–:]|` +
+	`\s*/\s*`)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Complex separator substitutions (COMPLEX_SEPARATORS in Ruby).
@@ -294,24 +379,210 @@ type complexSep struct {
 }
 
 var complexSeparators = []complexSep{
-	{regexp.MustCompile(`^(\S{4,}),\s+(Mrs?\.|MRS?\.)\s+([A-Za-z.\s]+)$`), "$2 $3 $1"},
+	// "Mrs./Mr. & Mrs./Mr. Family" shared-appellation
 	{regexp.MustCompile(`^(Mrs?\.?)\s+&\s+(Mrs?\.?)\s+(.*)$`), "$1 $3 | $2 $3"},
-	{regexp.MustCompile(`^([A-Z]\.[[:alpha:]]+),\s*([A-Z.]+)$`), "$1 $2"},
-	{regexp.MustCompile(`^(\S{4,},\s+(?:\S\.\s*)+)\s+(\S{4,},\s+(?:\S\.\s*)+)$`), "$1 | $2"},
+	// "Family, Mrs. Given" → "Mrs. Given Family"
+	{regexp.MustCompile(`^(\S{4,}),\s+(Mrs?\.|MRS?\.)\s+([A-Za-z.\s]+)$`), "$2 $3 $1"},
+
+	// Two sort-order names concatenated: "Puttock, C.F. James, S.A."
+	// Relaxed to \S{2,} to also match short names like "Ng, J."
+	{regexp.MustCompile(`^(\S{2,},\s+(?:\S\.\s*)+)\s+(\S{2,},\s+(?:\S\.\s*)+)$`), "$1 | $2"},
+
+	// "Family Q., Family P." — two sort-order entries where given is a single dotted initial
+	// e.g. "Groom Q., Desmet P." → "Groom, Q. | Desmet, P."
+	{regexp.MustCompile(`^([A-Z][a-z]+)\s+([A-Z]\.),\s+([A-Z][a-z]+)\s+([A-Z]\.)$`), "$1, $2 | $3, $4"},
+
+	// dot-then-word: "J.R.Smith" → "J.R. Smith" (split compact names)
 	{regexp.MustCompile(`(\S\.)([[:alpha:]]{2,})`), "$1 $2"},
+
+	// "FamilyName Initials" display-order: "Picard J.H." → "Picard, J.H."
 	{regexp.MustCompile(`^([[:alpha:]]{2,})(?:\s+)((?:\S\.\s?)+)$`), "$1, $2"},
+
+	// van/von particle double-name
 	{regexp.MustCompile(`^([[:alpha:]]*),?\s*(.*)\s+(van|von|v\.|von\s+der|van\s+der)(?:and|&|et|e|,|;)\s*([[:alpha:]]*),?\s*(.*)\s+(van|von|v\.|von\s+der|van\s+der)$`), "$3 $1, $2 | $6 $4, $5"},
 	{regexp.MustCompile(`^([[:alpha:]]*),?\s*(.*)\s+(van|von|v\.|von\s+der|van\s+der)$`), "$3 $1, $2"},
-	{regexp.MustCompile(`^((?:[A-Z]\.\s?)+)\s?(?:and|&|et|e)\s+((?:[A-Z]\.\s?)+)\s+([[:alpha:]'-]{2,})\s+([[:alpha:]'-]{2,})$`), "$1 $4 | $2 $3 $4"},
-	{regexp.MustCompile(`^((?:[A-Z]\.\s?)+)\s?(?:and|&|et|e)\s+((?:[A-Z]\.\s?)+)\s+([[:alpha:]'-]{2,})(.*)$`), "$1 $3 | $2 $3 | $4"},
-	{regexp.MustCompile(`^([A-Z]{1,3})\s+(?:and|&|et|e)\s+([A-Z]{1,3})\s+([[:alpha:]'-]{2,})(.*)$`), "$1 $3 | $2 $3 | $4"},
+
+	// "F.G. and/& H.I. Family1 Family2" (different families)
+	{regexp.MustCompile(`^((?:[A-Z]\.\s?)+)\s*(?:and|&|et|e)\s+((?:[A-Z]\.\s?)+)\s+([[:alpha:]'-]{2,})\s+([[:alpha:]'-]{2,})$`), "$1 $4 | $2 $3 $4"},
+	// "F.G. and/& H.I. SharedFamily"
+	{regexp.MustCompile(`^((?:[A-Z]\.\s?)+)\s*(?:and|&|et|e)\s+((?:[A-Z]\.\s?)+)\s+([[:alpha:]'-]{2,})(.*)$`), "$1 $3 | $2 $3 | $4"},
+	// "A and/& B SharedFamily" (single-letter initials without dots)
+	{regexp.MustCompile(`^([A-Z]{1,3})\s*(?:and|&|et|e)\s+([A-Z]{1,3})\s+([[:alpha:]'-]{2,})(.*)$`), "$1 $3 | $2 $3 | $4"},
+
+	// "F.G., H.I. and/& J.K. SharedFamily" (3-way shared family)
 	{regexp.MustCompile(`^((?:[A-Z]\.\s?)+),\s+([A-Z.\s]+)\s+(?:and|&|et|e)\s+((?:[A-Z]\.\s?)+)\s+([[:alpha:]'-]{2,})(.*)$`), "$1 $4 | $2 $4 | $3 $4 | $5"},
+
+	// Word-list separators (Chaboo, Bennett, Shin style — all family-only names)
 	{regexp.MustCompile(`(?i)^([A-Z][[:alpha:]]{2,}),\s*([A-Z][[:alpha:]]{2,})\s*(?:and|&|et|e|,)\s+([A-Z][[:alpha:]]{2,})$`), "$1 | $2 | $3"},
 	{regexp.MustCompile(`(?i)^([A-Z][[:alpha:]]{2,}),\s*([A-Z][[:alpha:]]{2,}),\s*([A-Z][[:alpha:]]{2,})\s*(?:and|&|et|e|,)\s+([A-Z][[:alpha:]]{3,})$`), "$1 | $2 | $3 | $4"},
 	{regexp.MustCompile(`(?i)^([A-Z][[:alpha:]]{2,}),\s*([A-Z][[:alpha:]]{2,}),\s*([A-Z][[:alpha:]]{2,}),\s*([A-Z][[:alpha:]]{2,})\s*(?:and|&|et|e|,)\s+([A-Z][[:alpha:]]{3,})$`), "$1 | $2 | $3 | $4 | $5"},
 }
 
+// displayOrderListItemRe matches a single display-order name item.
+// Handles: "N. Lujan", "C.F. James", "W. C. Gagne", "C Armbruster", "E Thomas"
+// Does NOT match pure-initials like "S.A." or bare single letters like "K."
+var displayOrderListItemRe = regexp.MustCompile(
+	`^(?:` +
+		`(?:[A-Z]\.)+\s+` + // dotted multi-initial prefix: "C.F. " or "W.J.K. "
+		`|[A-Z]\.?\s+` + // single letter with optional dot: "N. " or "C "
+		`)*` +
+		`[A-Z][a-z\x{00E0}-\x{017E}][^\s,]{0,}$`) // family: uppercase + lowercase start
+
+// displayOrderListInitialItemRe matches items that have an initials prefix.
+var displayOrderListInitialItemRe = regexp.MustCompile(
+	`^[A-Z]\.?\s+[A-Z]`)
+
+func isDisplayOrderList(seg string) bool {
+	if !strings.Contains(seg, ",") {
+		return false
+	}
+	parts := strings.Split(seg, ",")
+	// Clean and filter
+	cleaned := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		p = strings.TrimLeft(p, "& \t")
+		if p != "" {
+			cleaned = append(cleaned, p)
+		}
+	}
+	if len(cleaned) < 2 {
+		return false
+	}
+	matched := 0
+	hasInitialsPrefix := false
+	for _, p := range cleaned {
+		if displayOrderListItemRe.MatchString(p) {
+			matched++
+		}
+		if displayOrderListInitialItemRe.MatchString(p) {
+			hasInitialsPrefix = true
+		}
+	}
+	// For small lists (≤3 items): require ALL items match AND at least one has an
+	// initials prefix. This prevents "Puttock, C.F. James, S.A." (two concatenated
+	// sort-order names) from being misidentified as a display-order list.
+	// For larger lists (≥4 items): require at least 2/3 matching with an initials prefix.
+	if len(cleaned) <= 3 {
+		return matched == len(cleaned) && hasInitialsPrefix
+	}
+	return matched >= 2 && matched*3 >= len(cleaned)*2 && hasInitialsPrefix
+}
+
+// sortOrderListItemRe matches a sort-order name token: "Harkness, W.J.K."
+// In the comma-list context, each token is "Family" and the following
+// token is the initials — so after splitting on ", " we get pairs.
+var sortOrderListItemRe = regexp.MustCompile(
+	`^[A-Z][a-z]{1,}$`)   // just the family part token
+var initialsOnlyRe = regexp.MustCompile(
+	`^(?:[A-Z]\.)+$`)     // just the initials part token
+
+// isSortOrderList detects "Harkness, W.J.K., Dickinson, J.C., & Marshall, N."
+// A sort-order list has the pattern: Word, Initials, Word, Initials...
+func isSortOrderList(seg string) bool {
+	// Quick check: contains multiple commas and starts with a capital word
+	if !strings.Contains(seg, ",") {
+		return false
+	}
+	parts := strings.Split(seg, ",")
+	if len(parts) < 4 { // need at least "Family, Init, Family, Init"
+		return false
+	}
+	// Check pattern: odd parts are family names (single word), even are initials
+	matchCount := 0
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if i%2 == 0 {
+			if sortOrderListItemRe.MatchString(p) {
+				matchCount++
+			}
+		} else {
+			if initialsOnlyRe.MatchString(p) || regexp.MustCompile(`^[A-Z]\.`).MatchString(p) {
+				matchCount++
+			}
+		}
+	}
+	return matchCount >= 4
+}
+
+func splitSortOrderList(seg string) string {
+	// Split "Harkness, W.J.K., Dickinson, J.C., & Marshall, N." into pipe-list.
+	// The charSubs rule ", &" → " &" can remove the comma before "&", merging
+	// the initials and the next family name: "J.C., & Marshall" → "J.C. & Marshall".
+	// We handle that by splitting on " & " within the initials token.
+	initRe := regexp.MustCompile(`^[A-Z]\.`)
+	parts := strings.Split(seg, ",")
+	var names []string
+	i := 0
+	for i < len(parts) {
+		fam := strings.TrimSpace(strings.TrimLeft(parts[i], "& \t"))
+		if fam == "" {
+			i++
+			continue
+		}
+		if i+1 < len(parts) {
+			giv := strings.TrimSpace(strings.TrimLeft(parts[i+1], "& \t"))
+			// Handle "J.C. & Marshall" — initials merged with next family via charSubs
+			if ampIdx := strings.Index(giv, " & "); ampIdx >= 0 {
+				actualGiv := strings.TrimSpace(giv[:ampIdx])
+				nextFam := strings.TrimSpace(giv[ampIdx+3:])
+				if initRe.MatchString(actualGiv) && sortOrderListItemRe.MatchString(nextFam) {
+					names = append(names, fam+", "+actualGiv)
+					// Peek at next part for nextFam's given
+					if i+2 < len(parts) {
+						nextGiv := strings.TrimSpace(strings.TrimLeft(parts[i+2], "& \t"))
+						if initRe.MatchString(nextGiv) {
+							names = append(names, nextFam+", "+nextGiv)
+							i += 3
+							continue
+						}
+					}
+					names = append(names, nextFam)
+					i += 2
+					continue
+				}
+			}
+			if giv != "" && (initialsOnlyRe.MatchString(giv) || initRe.MatchString(giv)) {
+				names = append(names, fam+", "+giv)
+				i += 2
+				continue
+			}
+		}
+		if sortOrderListItemRe.MatchString(fam) {
+			names = append(names, fam)
+		}
+		i++
+	}
+	if len(names) >= 2 {
+		return strings.Join(names, " | ")
+	}
+	return seg
+}
+
 func applyComplexSeparators(s string) string {
+	// Sort-order list: "Harkness, W.J.K., Dickinson, J.C., & Marshall, N."
+	if isSortOrderList(s) {
+		return splitSortOrderList(s)
+	}
+
+	// Display-order comma list detection. charSubs converts ", &" → " &"
+	// (losing the comma), so also try with " & " normalised back to ",".
+	sNorm := regexp.MustCompile(`\s*&\s*`).ReplaceAllString(s, ",")
+	if isDisplayOrderList(sNorm) {
+		parts := strings.Split(sNorm, ",")
+		trimmed := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				trimmed = append(trimmed, p)
+			}
+		}
+		return strings.Join(trimmed, " | ")
+	}
+
 	for _, cs := range complexSeparators {
 		if cs.re.MatchString(s) {
 			s = cs.re.ReplaceAllString(s, cs.replacement)
@@ -319,7 +590,6 @@ func applyComplexSeparators(s string) string {
 	}
 	return s
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // BLACKLIST regex (applied to DisplayOrder of a parsed name)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -381,16 +651,19 @@ var familyBlacklist = map[string]bool{
 	"der": true, "di": true, "do": true, "dos": true, "du": true,
 	"el": true, "la": true, "nebc": true, "van": true, "von": true,
 	"the": true, "of": true, "new": true, "no": true, "pp": true,
-	"adjustment": true, "agent": true, "annotator": true, "available": true,
-	"arachnology": true, "catalogue": true, "comments": true, "curators": true,
-	"data": true, "details": true, "determiner": true, "determination": true,
-	"dissected": true, "dissection": true, "entered": true, "erased": true,
-	"expd": true, "expdn": true, "hist": true, "historical": true,
-	"historie": true, "indecipherable": true, "inst": true,
-	"meteorological": true, "nomenclatural": true, "orig": true,
-	"prof": true, "professional": true, "qld": true, "registration": true,
-	"science": true, "study": true, "umeå": true, "wg": true, "wm": true,
-	"wn": true, "zw": true, "zz": true, "z-": true,
+	"adjustment": true, "agent": true, "annotated": true, "annotator": true,
+	"available": true, "arachnology": true, "catalogue": true,
+	"checked": true, "collector": true, "comments": true, "confirmed": true,
+	"curators": true, "data": true, "details": true, "determiner": true,
+	"determination": true, "dissected": true, "dissection": true,
+	"entered": true, "erased": true, "expd": true, "expdn": true,
+	"hist": true, "historical": true, "historie": true,
+	"indecipherable": true, "inst": true, "meteorological": true,
+	"nomenclatural": true, "orig": true, "prep": true, "prof": true,
+	"professional": true, "qld": true, "registration": true,
+	"science": true, "state": true, "stet": true, "study": true, "umeå": true,
+	"verified": true, "wg": true, "wm": true, "wn": true, "zw": true,
+	"zz": true, "z-": true,
 }
 
 var givenBlacklist = map[string]bool{

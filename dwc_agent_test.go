@@ -1,6 +1,7 @@
 package dwcagent_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -1108,5 +1109,154 @@ func TestParsePurchasedBySeparator(t *testing.T) {
 	names := dwcagent.Parse("Smith purchased by Jones")
 	if len(names) < 2 {
 		t.Errorf("purchased by: want ≥2 names, got %d: %+v", len(names), names)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// test_data.txt integration tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+// sp is already defined earlier in the file as a helper returning *string.
+
+// TestTestDataFileNoPanic reads every line of testdata/test_data.txt and
+// verifies that Parse+Clean completes without panicking and returns a
+// non-nil slice. This is the Go equivalent of the Ruby spec's it_behaves_like
+// "parses_without_panic" shared example.
+func TestTestDataFileNoPanic(t *testing.T) {
+	data, err := os.ReadFile("testdata/test_data.txt")
+	if err != nil {
+		t.Fatalf("could not read testdata/test_data.txt: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Must not panic
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("Parse panicked on %q: %v", line, r)
+				}
+			}()
+			names := dwcagent.Parse(line)
+			if names == nil {
+				t.Errorf("Parse returned nil for %q", line)
+			}
+			for _, n := range names {
+				c := dwcagent.Clean(n)
+				if c == (dwcagent.Name{}) {
+					// Default() is a valid result — not an error
+				}
+			}
+		}()
+	}
+	t.Logf("Processed %d lines from test_data.txt without panic", len(lines))
+}
+
+// TestTestDataExpectedOutputs verifies exact expected outputs for a selection
+// of strings from test_data.txt that have clear correct answers.
+// These mirror the Ruby spec's explicit assertion blocks.
+func TestTestDataExpectedOutputs(t *testing.T) {
+	type tc struct {
+		input       string
+		wantCount   int
+		wantFamily0 string // "" means don't check
+		wantGiven0  string // "" means don't check
+	}
+	cases := []tc{
+		// README examples
+		{"W.J. Cody", 1, "Cody", "W.J."},
+		{"R.D.M. Page", 1, "Page", "R.D.M."},
+		{"Smith, J.", 1, "Smith", "J."},
+		{"Ludwig von Beethoven", 1, "Beethoven", "Ludwig von"},
+		// Multiple names
+		{"W.J. Cody; R.D.M. Page", 2, "Cody", "W.J."},
+		{"J. & K. Smith", 2, "Smith", "J."},
+		{"J. et K. Smith", 2, "Smith", "J."},
+		// Specimen numbers stripped
+		{"13267 (male) W.J. Cody", 1, "Cody", "W.J."},
+		// Particles
+		{"Jan van der Berg", 1, "Berg", "Jan"},
+		{"Ludwig van Beethoven", 1, "Beethoven", "Ludwig van"},
+		{"de Jussieu, Antoine Laurent", 1, "Jussieu", "Antoine Laurent"},
+		// Titles stripped from output names
+		{"Dr. Smith, J.", 1, "Smith", "J."},
+		{"Sir Isaac Newton", 1, "Newton", "Isaac"},
+		// Hyphenated
+		{"García-López, J.", 1, "García-López", "J."},
+		{"O'Brien, Patrick", 1, "O'Brien", "Patrick"},
+		// Blacklisted — should return 0 valid names
+		{"Anonymous", 0, "", ""},
+		{"Unknown", 0, "", ""},
+		{"University of Michigan", 0, "", ""},
+		{"not any", 0, "", ""},
+		{"has not", 0, "", ""},
+		{"AB", 0, "", ""},
+		// Single-letter family rejected
+		{"Dr. A.", 0, "", ""},
+		{"Dr. L.", 0, "", ""},
+		// Digit in name rejected
+		{"Smith2", 0, "", ""},
+		{"8E08", 0, "", ""},
+		// Greenlisted short families
+		{"Ng, Peter", 1, "Ng", "Peter"},
+		{"Vlk, Jan", 1, "Vlk", "Jan"},
+		// Separators
+		{"Smith – Jones", 2, "", ""},
+		{"Wagner und Mueller", 2, "", ""},
+		{"García y López", 2, "", ""},
+		{"Smith et Jones", 2, "", ""},
+		// Role/verb separators
+		{"Smith, J. det. Jones, A.", 2, "Smith", "J."},
+		{"Smith, J. identified by Jones, A.", 2, "Smith", "J."},
+		// ORCID stripped
+		{"Smith, J. ORCID 0000-0001-2345-6789", 1, "Smith", "J."},
+		{"Smith, J. 0000-0001-2345-6789", 1, "Smith", "J."},
+		// Mojibake — all rejected
+		{"8:>;0O 8E08;>28G0", 0, "", ""},
+		// Catalan i
+		{"A. Gòmez-Bolea i A. Longàn", 2, "Gòmez-Bolea", "A."},
+		// Suffix
+		{"Smith, John Jr.", 1, "Smith", "John"},
+		// Et al stripped
+		{"Cody, W.J. et al.", 1, "Cody", "W.J."},
+	}
+
+	for _, c := range cases {
+		names := dwcagent.Parse(c.input)
+		cleaned := make([]dwcagent.Name, 0, len(names))
+		for _, n := range names {
+			cl := dwcagent.Clean(n)
+			if !cl.IsDefault() {
+				cleaned = append(cleaned, cl)
+			}
+		}
+		if len(cleaned) != c.wantCount {
+			t.Errorf("input %q: want %d names, got %d: %+v",
+				c.input, c.wantCount, len(cleaned), cleaned)
+			continue
+		}
+		if c.wantCount > 0 && c.wantFamily0 != "" {
+			if cleaned[0].Family == nil || *cleaned[0].Family != c.wantFamily0 {
+				got := "<nil>"
+				if cleaned[0].Family != nil {
+					got = *cleaned[0].Family
+				}
+				t.Errorf("input %q: want family[0]=%q, got %q",
+					c.input, c.wantFamily0, got)
+			}
+		}
+		if c.wantCount > 0 && c.wantGiven0 != "" {
+			if cleaned[0].Given == nil || *cleaned[0].Given != c.wantGiven0 {
+				got := "<nil>"
+				if cleaned[0].Given != nil {
+					got = *cleaned[0].Given
+				}
+				t.Errorf("input %q: want given[0]=%q, got %q",
+					c.input, c.wantGiven0, got)
+			}
+		}
 	}
 }

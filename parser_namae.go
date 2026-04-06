@@ -3,23 +3,22 @@ package dwcagent
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Namae-compatible parser
-//
-// Implements the BibTeX name-parsing rules used by the Ruby Namae gem:
-//   Sort-order:    "Family, Given"
-//   Display-order: "Given Family"
 // ─────────────────────────────────────────────────────────────────────────────
 
 var (
-	suffixTokenRe = regexp.MustCompile(`(?i)^(jr\.?|sr\.?|esq\.?|[IVX]{2,}\.?)$`)
+	suffixTokenRe = regexp.MustCompile(
+		`(?i)^(jr\.?|sr\.?|esq\.?|[IVX]{2,}\.?)$`)
 
 	titleTokenRe = regexp.MustCompile(
 		`(?i)^(sir|count(?:ess)?|colonel|gen\.|adm\.|col\.|maj\.|cmdr\.|lt\.|sgt\.|cpl\.|pvt\.|` +
-			`prof\.?|dr\.?|dra\.|md\.?|ph\.?d\.?|rev\.?|mme\.?|abb[eé]\.?|ptre\.?|bro\.?|esq\.?|` +
-			`doct(?:eu|o)r|father|cantor|vicar|p[eè]re|pastor|profa\.?|profª|rabbi|reverend|soeur|sister|professor)$`)
+			`prof\.?|dr\.?|dra\.|md\.?|ph\.?d\.?|rev\.?|mme\.?|abb[eé]\.?|ptre\.?|bro\.?|` +
+			`doct(?:eu|o)r|father|cantor|vicar|p[eè]re|pastor|profa\.?|profª|rabbi|reverend|soeur|sister|professor|` +
+			`esq\.?)$`)
 
 	appellationTokenRe = regexp.MustCompile(`(?i)^(mrs?\.?|ms\.?|miss|fr\.?|hr\.?|herr|frau)$`)
 
@@ -33,15 +32,41 @@ var (
 	twoTokenParticles = map[string]bool{
 		"van de": true, "van der": true, "von der": true, "van den": true,
 	}
+
+	// allCapsInitialsRe matches 2–4 uppercase letters (no dots).
+	// "FAH"→F.A.H., "JH"→J.H., "CJ"→C.J. Excludes 5+ char words like "CHRIS".
+	allCapsInitialsRe = regexp.MustCompile(`^[A-Z]{2,4}$`)
+
+	// singleCapRe matches exactly one bare uppercase letter used as an initial.
+	singleCapRe = regexp.MustCompile(`^[A-Z]$`)
+
+	// adjacentInitialRe collapses "X. Y." → "X.Y."
+	adjacentInitialRe = regexp.MustCompile(`([A-Z]\.) ([A-Z]\.)`)
+
+	// singleInitBetweenWordsRe detects "Jack E Smith" (middle bare initial).
+	singleInitBetweenWordsRe = regexp.MustCompile(
+		`^([A-Z][a-z]+)\s+([A-Z])\s+([A-Z][a-z]+)$`)
+
+	// hyphenatedGivenRe detects "Hsuan-Ching" style — hyphenated multi-part
+	// given name that got separated into two tokens by the pipe splitter.
+	// This fires in parseDisplayOrder when a lone hyphenated token appears.
+	hyphenatedWordRe = regexp.MustCompile(`^[A-Z][a-z]+-[A-Z][a-z]+$`)
 )
 
 // parseNames splits preprocessed input on "|" and parses each segment.
 func parseNames(preprocessed string) []Name {
+	trailingDotRe  := regexp.MustCompile(`\s+\.\s*$`)
+	trailingDashRe := regexp.MustCompile(`\s*-+\s*$`)
+
 	segments := splitByPipeRe.Split(preprocessed, -1)
 	var results []Name
 	for _, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		seg = residualTerminatorsRe.ReplaceAllString(seg, "")
+		// Strip trailing isolated dot (left after bracket removal mid-string)
+		// and trailing dashes (left after numeric-date removal)
+		seg = trailingDotRe.ReplaceAllString(seg, "")
+		seg = trailingDashRe.ReplaceAllString(seg, "")
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
 			continue
@@ -54,7 +79,7 @@ func parseNames(preprocessed string) []Name {
 	return results
 }
 
-// parseOne parses a single name string.
+// parseOne parses a single name segment.
 func parseOne(s string) Name {
 	if commaIdx := strings.Index(s, ","); commaIdx > 0 {
 		return parseSortOrder(s, commaIdx)
@@ -62,117 +87,123 @@ func parseOne(s string) Name {
 	return parseDisplayOrder(s)
 }
 
-// parseSortOrder handles "Family, Given [Suffix]"
+// parseSortOrder handles "Family, Given [Suffix]" — the sort-order BibTeX form.
+// The given field is everything after the comma and is always treated as-is
+// (never re-parsed as display-order), since in "Tanner, C.A." the restPart
+// "C.A." is the initials of the given name, not "C." given + "A." family.
 func parseSortOrder(s string, commaIdx int) Name {
 	familyPart := strings.TrimSpace(s[:commaIdx])
-	restPart := strings.TrimSpace(s[commaIdx+1:])
+	restPart   := strings.TrimSpace(s[commaIdx+1:])
 
 	n := Name{}
 
 	restTokens := tokenise(restPart)
-	restTokens, suffix := extractSuffix(restTokens)
-	restTokens, title := extractTitle(restTokens)
+	restTokens, suffix      := extractSuffix(restTokens)
+	restTokens, title       := extractTitle(restTokens)
 	restTokens, appellation := extractAppellation(restTokens)
 
 	if suffix != "" {
-		n.Suffix = strPtr(suffix)
+		if strings.EqualFold(strings.TrimSuffix(suffix, "."), "esq") {
+			title = "Esq."
+		} else {
+			n.Suffix = strPtr(normaliseSuffix(suffix))
+		}
 	}
-	if title != "" {
-		n.Title = strPtr(title)
-	}
-	if appellation != "" {
-		n.Appellation = strPtr(appellation)
-	}
+	if title != ""       { n.Title       = strPtr(title)       }
+	if appellation != "" { n.Appellation = strPtr(appellation) }
 
 	familyTokens := tokenise(familyPart)
 	familyTokens, particle := extractLeadingParticle(familyTokens)
 	family := strings.Join(familyTokens, " ")
+	if family   != "" { n.Family   = strPtr(family)   }
+	if particle != "" { n.Particle = strPtr(particle)  }
 
-	if family != "" {
-		n.Family = strPtr(family)
-	}
-	if particle != "" {
-		n.Particle = strPtr(particle)
-	}
-
-	given := strings.Join(restTokens, " ")
+	// Treat the entire restPart as given — never try to split it further.
+	// This correctly handles "C.A.", "W.J.K.", "N.", "E.", "Carolyn J.", etc.
+	given := condenseInitials(strings.Join(restTokens, " "))
 	if given != "" {
 		n.Given = strPtr(given)
 	}
 	return n
 }
 
-// parseDisplayOrder handles "Given [Particle] Family [Suffix]"
+// parseDisplayOrder handles "Given [Particle] Family [Suffix]" — display order.
 func parseDisplayOrder(s string) Name {
+	// Special case: "Jack E Smith" — Word BareInitial Word → given="Jack E.", family="Smith"
+	if m := singleInitBetweenWordsRe.FindStringSubmatch(s); m != nil {
+		n := Name{}
+		n.Given  = strPtr(m[1] + " " + m[2] + ".")
+		n.Family = strPtr(m[3])
+		return n
+	}
+
 	tokens := tokenise(s)
 	if len(tokens) == 0 {
 		return Default()
 	}
 
+	// Expand all-caps initials and single bare-cap tokens.
+	tokens = expandCapsInitials(tokens)
+
 	n := Name{}
-	tokens, suffix := extractSuffix(tokens)
-	tokens, title := extractTitle(tokens)
+	tokens, suffix      := extractSuffix(tokens)
+	tokens, title       := extractTitle(tokens)
 	tokens, appellation := extractAppellation(tokens)
 
 	if suffix != "" {
-		n.Suffix = strPtr(suffix)
+		if strings.EqualFold(strings.TrimSuffix(suffix, "."), "esq") {
+			title = "Esq."
+		} else {
+			n.Suffix = strPtr(normaliseSuffix(suffix))
+		}
 	}
-	if title != "" {
-		n.Title = strPtr(title)
-	}
-	if appellation != "" {
-		n.Appellation = strPtr(appellation)
-	}
+	if title != ""       { n.Title       = strPtr(title)       }
+	if appellation != "" { n.Appellation = strPtr(appellation) }
 
 	if len(tokens) == 0 {
 		return n
 	}
 
 	tokens, nick := extractNick(tokens)
-	if nick != "" {
-		n.Nick = strPtr(nick)
-	}
+	if nick != "" { n.Nick = strPtr(nick) }
 
-	if len(tokens) == 0 {
-		return n
-	}
+	if len(tokens) == 0 { return n }
 
-	// Single token → treat as given (cleaner will promote to family)
+	// Single token → treat as given (cleaner will promote to family if needed).
 	if len(tokens) == 1 {
 		n.Given = strPtr(tokens[0])
 		return n
 	}
 
-	// Check for two-token particle second-to-last
+	// Check for two-token particle second-to-last ("van der", "von der", etc.)
 	if len(tokens) >= 3 {
 		maybeTwo := strings.ToLower(tokens[len(tokens)-3] + " " + tokens[len(tokens)-2])
 		if twoTokenParticles[maybeTwo] {
-			n.Given = strPtr(strings.Join(tokens[:len(tokens)-3], " "))
+			givenRaw := strings.Join(tokens[:len(tokens)-3], " ")
+			if givenRaw != "" { n.Given = strPtr(condenseInitials(givenRaw)) }
 			n.Particle = strPtr(tokens[len(tokens)-3] + " " + tokens[len(tokens)-2])
-			n.Family = strPtr(tokens[len(tokens)-1])
+			n.Family   = strPtr(tokens[len(tokens)-1])
 			return n
 		}
 	}
 
-	// Check for single particle second-to-last
+	// Check for single particle second-to-last.
 	if len(tokens) >= 2 {
 		maybePart := strings.ToLower(tokens[len(tokens)-2])
 		if particleSet[maybePart] {
-			given := strings.Join(tokens[:len(tokens)-2], " ")
-			if given != "" {
-				n.Given = strPtr(given)
-			}
+			givenRaw := strings.Join(tokens[:len(tokens)-2], " ")
+			if givenRaw != "" { n.Given = strPtr(condenseInitials(givenRaw)) }
 			n.Particle = strPtr(tokens[len(tokens)-2])
-			n.Family = strPtr(tokens[len(tokens)-1])
+			n.Family   = strPtr(tokens[len(tokens)-1])
 			return n
 		}
 	}
 
-	// Default: last token = family, rest = given
+	// Default: last token = family, rest = given.
 	n.Family = strPtr(tokens[len(tokens)-1])
-	given := strings.Join(tokens[:len(tokens)-1], " ")
-	if given != "" {
-		n.Given = strPtr(given)
+	givenRaw := strings.Join(tokens[:len(tokens)-1], " ")
+	if givenRaw != "" {
+		n.Given = strPtr(condenseInitials(givenRaw))
 	}
 	return n
 }
@@ -180,6 +211,7 @@ func parseDisplayOrder(s string) Name {
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 func tokenise(s string) []string {
+	// Split compact "J.R.Smith" → "J.R. Smith" before splitting into tokens.
 	s = dotThenWordRe.ReplaceAllString(s, "$1 $2")
 	return strings.Fields(s)
 }
@@ -237,7 +269,96 @@ func extractLeadingParticle(tokens []string) ([]string, string) {
 	return tokens, ""
 }
 
-// normalizeInitials expands "W.J." to "W. J." in the Given field.
+// expandCapsInitials expands run-together or spaced uppercase initial tokens.
+//   "FAH"       → ["F.", "A.", "H."]
+//   "JH"        → ["J.", "H."]
+//   ["A","Y"]   → ["A.", "Y."]   (single bare caps in a multi-token list)
+// Does NOT expand the last token when it looks like a genuine family name
+// (5+ chars, or mixed with non-caps tokens that are not initials).
+func expandCapsInitials(tokens []string) []string {
+	if len(tokens) == 0 {
+		return tokens
+	}
+
+	// Count caps-style tokens (single bare cap or 2-4 all-caps).
+	capsCount := 0
+	for _, t := range tokens {
+		if allCapsInitialsRe.MatchString(t) || singleCapRe.MatchString(t) {
+			capsCount++
+		}
+	}
+	allAreCaps := capsCount == len(tokens)
+
+	out := make([]string, 0, len(tokens)+4)
+	for i, tok := range tokens {
+		isLast := i == len(tokens)-1
+
+		if singleCapRe.MatchString(tok) {
+			// Single bare cap: always expand to dotted initial when not last,
+			// or when all tokens are caps-style.
+			if !isLast || allAreCaps {
+				out = append(out, tok+".")
+				continue
+			}
+		}
+		if allCapsInitialsRe.MatchString(tok) {
+			// 2–4 all-caps: expand when not last, or all are caps, or only 2 chars.
+			if !isLast || allAreCaps || len(tok) <= 2 {
+				for _, r := range tok {
+					out = append(out, string(r)+".")
+				}
+				continue
+			}
+		}
+		out = append(out, tok)
+	}
+	return out
+}
+
+// condenseInitials collapses spaced initials into compact dotted form.
+//   "B. P. J." → "B.P.J."
+//   "R.K. A."  → "R.K.A."
+//   "T. L."    → "T.L."
+//   "A A"      → "A.A."  (single bare caps get a dot via expandCapsInitials first)
+func condenseInitials(s string) string {
+	if s == "" {
+		return s
+	}
+	// Add dot to bare single capital letters that appear as isolated tokens.
+	// "A A" → "A. A." so that adjacentInitialRe can then collapse them.
+	s = regexp.MustCompile(`(^| )([A-Z])( |$)`).ReplaceAllStringFunc(s, func(m string) string {
+		trimmed := strings.TrimSpace(m)
+		if []rune(trimmed)[0] >= 'A' && []rune(trimmed)[0] <= 'Z' && len([]rune(trimmed)) == 1 {
+			prefix, suffix2 := "", ""
+			if strings.HasPrefix(m, " ") { prefix = " " }
+			if strings.HasSuffix(m, " ") { suffix2 = " " }
+			return prefix + trimmed + "." + suffix2
+		}
+		return m
+	})
+	// Collapse "X. Y." → "X.Y."
+	for adjacentInitialRe.MatchString(s) {
+		s = adjacentInitialRe.ReplaceAllString(s, "$1$2")
+	}
+	return strings.TrimSpace(s)
+}
+
+// normaliseSuffix ensures suffix has correct capitalisation and trailing dot.
+func normaliseSuffix(s string) string {
+	upper := strings.ToUpper(strings.TrimSuffix(s, "."))
+	switch upper {
+	case "JR":
+		return "Jr."
+	case "SR":
+		return "Sr."
+	}
+	if regexp.MustCompile(`^[IVX]+$`).MatchString(upper) {
+		return upper + "."
+	}
+	return s
+}
+
+// normalizeInitials is kept for backward compatibility with cleaner.go.
 func normalizeInitials(n *Name) {
 	if n.Given == nil {
 		return
@@ -248,4 +369,9 @@ func normalizeInitials(n *Name) {
 		g = re.ReplaceAllString(g, "$1 $2")
 	}
 	n.Given = strPtr(g)
+}
+
+// isUpperRune reports whether r is an uppercase Unicode letter.
+func isUpperRune(r rune) bool {
+	return unicode.IsUpper(r)
 }
