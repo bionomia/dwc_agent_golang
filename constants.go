@@ -112,7 +112,9 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)contactid`),
 	regexp.MustCompile(`(?i)^dupl[.,]+`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*stet[,!]?\s*\d*$`),
-	regexp.MustCompile(`(?i)[,;]?\s*\d+[-/\s](?:\d+|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*[-/\s]?\d+`),
+	// Date patterns: allow space OR dash/slash between day-number and month name
+	// so "21 Dec. 1999", "21-12-1971", and "20/Aug./1980" are all caught.
+	regexp.MustCompile(`(?i)[,;]?\s*\d+[-/.\s]?(?:\d+|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*[-/\s]?\d+`),
 	// Also strip "20/Aug./1980" form where month is surrounded by slashes
 	regexp.MustCompile(`(?i)\d+\s*/\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*/\s*\d+`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*(?:Jan|January|janvier)[.,;]?\s*\d+`),
@@ -206,11 +208,11 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\s*&\s+[A-Z]{2,}\s+(?:team|group|party|crew|staff)\b`),
 	// Strip "North Dakota State University" and similar "State University" combos
 	regexp.MustCompile(`(?i)\b(?:North\s+Dakota|South\s+Dakota|Iowa|Ohio|Penn(?:sylvania)?|Michigan|Oregon|Arizona|Utah|Kansas|Colorado|Florida|Kentucky|Georgia|Virginia|Louisiana|Alabama|Mississippi|Tennessee|Indiana|Minnesota|Wisconsin|Oklahoma|Missouri|Arkansas|Nebraska|Wyoming|Montana|Idaho|Nevada|Vermont|Maine|Delaware|Hawaii|Alaska)\s+State\s+University\b`),
-	// Strip trailing month name when it follows a comma (month in given position)
-	// e.g. "Jacques, Avril décembre 2013" — "décembre" is left after digit strip
-	// Add months to the already-present strips but also match when not followed by digit
-	// (standalone month at end of string after a name):
-	regexp.MustCompile(`(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|janvier|f[eé]vrier|mars|avril|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre)\s*$`),
+	// Strip trailing month name that is a date artifact left after digit stripping.
+	// Uses a custom replacer (see trailingMonthReplacer below) that keeps the
+	// preceding word and removes only the month, so "Jan Jones Jan." → "Jan Jones"
+	// but "Vlk, Jan" → unchanged (Jan follows comma, no preceding 3-letter word).
+	trailingMonthStripRe,
 	// Strip "checked:" with no space before name (colon acts as separator but
 	// the word "checked" must also be removed from segment start)
 	regexp.MustCompile(`(?i)^checked?\s*:`),
@@ -255,11 +257,48 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\s+de\s*$`),
 	// Strip trailing isolated dot (e.g. after bracket removal: "Holm, E .")
 	regexp.MustCompile(`\s+\.\s*$`),
+	// Strip "not any" and "has not" as complete phrases (given-blacklist phrases
+	// that appear as display-order names if not caught early).
+	regexp.MustCompile(`(?i)^not\s+any$|^has\s+not$`),
+	// Strip leading "of " left after "University of X" has university removed
+	regexp.MustCompile(`(?i)^\s*of\s+`),
+	// Strip word+digit compounds like "Smith2" (short digit → whole token removed)
+	// or "Smith12345" (long digit suffix → just the digits stripped, letters kept).
+	// Short (1-3 digit suffix): strip whole compound so "Smith2" → "" → 0 names.
+	regexp.MustCompile(`\b[A-Za-z]{2,}\d{1,3}\b`),
+	// Long digit suffix (4+): a capturing sub handled in stripOut keeps the letters.
 	regexp.MustCompile(`\.{2,}$`),
 }
 
+// trailingMonthStripRe matches a 3+-letter word followed by a month name at end
+// of string. Group 1 captures the preceding word so it can be preserved.
+var trailingMonthStripRe = regexp.MustCompile(
+	`(?i)(\b[A-Za-z\x{00C0}-\x{017E}]{3,})\s+` +
+		`(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|` +
+		`Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|` +
+		`janvier|f[eé]vrier|mars|avril|juin|juillet|ao[uû]t|septembre|` +
+		`octobre|novembre|d[eé]cembre)\.?\s*$`)
+
+// longDigitSuffixRe strips long digit runs (4+) attached to words, keeping the letters.
+// e.g. "Smith12345" → "Smith". Short suffixes (1-3) are handled by a separate pattern
+// in stripOutPatterns that removes the whole token.
+var longDigitSuffixRe = regexp.MustCompile(`([A-Za-z]{2,})\d{4,}`)
+
 func stripOut(s string) string {
+	// Strip long digit suffixes first (keep letters): "Smith12345" → "Smith"
+	s = longDigitSuffixRe.ReplaceAllString(s, "$1")
 	for _, re := range stripOutPatterns {
+		if re == trailingMonthStripRe {
+			// Custom replacement: keep the preceding word (group 1), strip only the month.
+			s = trailingMonthStripRe.ReplaceAllStringFunc(s, func(m string) string {
+				sub := trailingMonthStripRe.FindStringSubmatch(m)
+				if len(sub) >= 2 {
+					return sub[1] // return just the preceding word
+				}
+				return ""
+			})
+			continue
+		}
 		s = re.ReplaceAllString(s, " ")
 	}
 	return s
