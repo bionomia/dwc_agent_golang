@@ -1182,6 +1182,7 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		{"Ludwig van Beethoven", 1, "Beethoven", "Ludwig"},  // particle=van is separate field
 		{"de Jussieu, Antoine Laurent", 1, "Jussieu", "Antoine Laurent"},
 		// Titles stripped from output names
+		{"Dr. J. Smith", 1, "Smith", "J."},
 		{"Sir Isaac Newton", 1, "Newton", "Isaac"},
 		// Hyphenated
 		{"García-López, J.", 1, "García-López", "J."},
@@ -1189,6 +1190,7 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		// Blacklisted — should return 0 valid names
 		{"Anonymous", 0, "", ""},
 		{"Unknown", 0, "", ""},
+		{"University of Michigan", 0, "", ""},
 		{"not any", 0, "", ""},
 		{"has not", 0, "", ""},
 		{"AB", 0, "", ""},
@@ -1200,7 +1202,7 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		{"8E08", 0, "", ""},
 		// Greenlisted short families
 		{"Ng, Peter", 1, "Ng", "Peter"},
-		{"Vlk, Jans", 1, "Vlk", "Jans"},
+		{"Vlk, Jan", 1, "Vlk", "Jan"},
 		// Separators
 		{"Smith – Jones", 2, "", ""},
 		{"Wagner und Mueller", 2, "", ""},

@@ -237,9 +237,9 @@ var stripOutPatterns = []*regexp.Regexp{
 	// stet[!,] only at end of string or before a digit (year) — NOT mid-word.
 	// "Kronenstet" should not match. Allow optional spaces before "!" too.
 	regexp.MustCompile(`(?i)\s+stet[\s!,]*\d*$`),
-	// Strip standalone month abbreviation at end of string (no following digit)
-	// e.g. "C.J. Bird Aug." left after the slash-date strip above
-	regexp.MustCompile(`(?i)\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*$`),
+	// NOTE: standalone month-at-end strip removed — it incorrectly stripped
+	// given names like "Jan" in "Vlk, Jan". Month artifacts are handled
+	// by the trailingMonthStripRe function (requires preceding 3-letter word).
 	regexp.MustCompile(`(?i)\s+prep\.?\s*$`),
 	regexp.MustCompile(`[({].*?[)}]`),
 	regexp.MustCompile(`\s+\[[\w\s?.-]{10,}\]`),
@@ -261,7 +261,7 @@ var stripOutPatterns = []*regexp.Regexp{
 	// that appear as display-order names if not caught early).
 	regexp.MustCompile(`(?i)^not\s+any$|^has\s+not$`),
 	// Strip leading "of " left after "University of X" has university removed
-	regexp.MustCompile(`(?i)^\s*of\s+`),
+	regexp.MustCompile(`(?i)^\s*of\s+.*$`),  // strip "of Michigan" etc after institution removed
 	// Strip word+digit compounds like "Smith2" (short digit → whole token removed)
 	// or "Smith12345" (long digit suffix → just the digits stripped, letters kept).
 	// Short (1-3 digit suffix): strip whole compound so "Smith2" → "" → 0 names.
