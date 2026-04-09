@@ -86,6 +86,9 @@ var stripOutPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b\d+\(?[[:alpha:]]\)?\b`),
 	// Slash-date "20/Aug./1980" — must be before digit strips so digits not consumed first
 	regexp.MustCompile(`(?i)\d+\s*/\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.?\s*/\s*\d+`),
+	// Roman-numeral date "19.II.1902" — must be BEFORE \b\d{2,}\b so the surrounding
+	// digits are not consumed first (leaving orphan ".II." which fools the name parser).
+	regexp.MustCompile(`(?i)\d{1,4}[/.]?(?:i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)[/.]\d{1,4}`),
 	regexp.MustCompile(`\b\d{2,}\b`),  // strip standalone numbers (specimen IDs etc.)
 	regexp.MustCompile(`[,;\s]+(?:et\.?\s+al|&\s+al)l?\.?`),
 	regexp.MustCompile(`(?i)\b[,;]?\s*etal\.?`),
@@ -229,7 +232,6 @@ var stripOutPatterns = []*regexp.Regexp{
 	// Strip standalone "State" when it follows a place name stripped by earlier patterns
 	regexp.MustCompile(`(?i)^State$`),
 	regexp.MustCompile(`[!@?]\s*-?\s*`),
-	regexp.MustCompile(`(?i)\d{1,4}[/.]?(?:i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)[/.]\d{1,4}`),
 	regexp.MustCompile(`[,;]$`),
 	regexp.MustCompile(`^\w{0,2}$`),
 	regexp.MustCompile(`^[A-Z]{2,}$`),
@@ -467,9 +469,12 @@ var displayOrderListItemRe = regexp.MustCompile(
 		`)*` +
 		`[A-Z][a-z\x{00E0}-\x{017E}][^\s,]{0,}$`) // family: uppercase + lowercase start
 
-// displayOrderListInitialItemRe matches items that have an initials prefix.
+// displayOrderListInitialItemRe matches items that have an initials prefix —
+// either a single initial ("N. Lujan") or multiple dotted initials ("C.H. Lowe",
+// "W.J.K. Harkness"). The multi-initial form (?:[A-Z]\.)+\s+[A-Z] handles cases
+// like "C.H. Lowe, O.H. Soule" which is a display-order pair, not a sort-order name.
 var displayOrderListInitialItemRe = regexp.MustCompile(
-	`^[A-Z]\.?\s+[A-Z]`)
+	`^(?:[A-Z]\.)+\s+[A-Z]|^[A-Z]\.?\s+[A-Z]`)
 
 func isDisplayOrderList(seg string) bool {
 	if !strings.Contains(seg, ",") {

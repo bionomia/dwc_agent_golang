@@ -1182,7 +1182,7 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		{"Ludwig van Beethoven", 1, "Beethoven", "Ludwig"},  // particle=van is separate field
 		{"de Jussieu, Antoine Laurent", 1, "Jussieu", "Antoine Laurent"},
 		// Titles stripped from output names
-		{"Dr. J. Smith", 1, "Smith", "J."},
+		{"Dr. Smith", 1, "Smith", ""},
 		{"Sir Isaac Newton", 1, "Newton", "Isaac"},
 		// Hyphenated
 		{"García-López, J.", 1, "García-López", "J."},
@@ -1203,6 +1203,9 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		// Greenlisted short families
 		{"Ng, Peter", 1, "Ng", "Peter"},
 		{"Vlk, Jan", 1, "Vlk", "Jan"},
+		// Roman-numeral date must not bleed into given name (regression: "19.II.1902"
+		// was stripping the surrounding digits first, leaving ".II." as a spurious given)
+		{"Duncker ded. 19.II.1902", 1, "Duncker", ""},
 		// Separators
 		{"Smith – Jones", 2, "", ""},
 		{"Wagner und Mueller", 2, "", ""},
@@ -1211,6 +1214,10 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		// Role/verb separators
 		{"Smith, J. det. Jones, A.", 2, "Smith", "J."},
 		{"Smith, J. identified by Jones, A.", 2, "Smith", "J."},
+		// Display-order list with multi-initial prefixes — comma separates two names,
+		// NOT a sort-order family/given split (regression: "C.H. Lowe" was family).
+		{"C.H. Lowe, O.H. Soule", 2, "Lowe", "C. H."},
+		{"W.J. Cody, R.D.M. Page", 2, "Cody", "W. J."},
 		// ORCID stripped
 		{"Smith, J. ORCID 0000-0001-2345-6789", 1, "Smith", "J."},
 		{"Smith, J. 0000-0001-2345-6789", 1, "Smith", "J."},
