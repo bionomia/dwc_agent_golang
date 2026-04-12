@@ -460,21 +460,30 @@ var complexSeparators = []complexSep{
 }
 
 // displayOrderListItemRe matches a single display-order name item.
-// Handles: "N. Lujan", "C.F. James", "W. C. Gagne", "C Armbruster", "E Thomas"
+// Handles:
+//   "N. Lujan"       — single initial + family
+//   "C.F. James"     — multi-initial + family
+//   "C Armbruster"   — undotted initial + family
+//   "Guy C. Joslin"  — full given word(s) + initial + family
+//   "Jean-Pierre Blanc" — hyphenated given + family
 // Does NOT match pure-initials like "S.A." or bare single letters like "K."
 var displayOrderListItemRe = regexp.MustCompile(
-	`^(?:` +
+	`^` +
+		`(?:[A-Za-z][A-Za-z\x{00C0}-\x{017E}\x{02B0}-\x{036F}'-]+\s+)*` + // optional full given words (incl. hyphenated)
+		`(?:` +
 		`(?:[A-Z]\.)+\s+` + // dotted multi-initial prefix: "C.F. " or "W.J.K. "
 		`|[A-Z]\.?\s+` + // single letter with optional dot: "N. " or "C "
 		`)*` +
 		`[A-Z][a-z\x{00E0}-\x{017E}][^\s,]{0,}$`) // family: uppercase + lowercase start
 
 // displayOrderListInitialItemRe matches items that have an initials prefix —
-// either a single initial ("N. Lujan") or multiple dotted initials ("C.H. Lowe",
-// "W.J.K. Harkness"). The multi-initial form (?:[A-Z]\.)+\s+[A-Z] handles cases
-// like "C.H. Lowe, O.H. Soule" which is a display-order pair, not a sort-order name.
+// a single initial ("N. Lujan"), multiple dotted initials ("C.H. Lowe"),
+// or a full given word followed by initials ("Guy C. Joslin").
+// This is used as the has_i guard: at least one item in the comma list must
+// match this to distinguish display-order lists from bare family-name lists.
 var displayOrderListInitialItemRe = regexp.MustCompile(
-	`^(?:[A-Z]\.)+\s+[A-Z]|^[A-Z]\.?\s+[A-Z]`)
+	`^(?:[A-Za-z][A-Za-z\x{00C0}-\x{017E}'-]+\s+)*(?:[A-Z]\.)+\s+[A-Z]` + // "Guy C. J..." or "C.H. L..."
+		`|^[A-Z]\.?\s+[A-Z]`) // "P. W..." or "N. L..."
 
 func isDisplayOrderList(seg string) bool {
 	if !strings.Contains(seg, ",") {

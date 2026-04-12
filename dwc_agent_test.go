@@ -1218,6 +1218,8 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		// NOT a sort-order family/given split (regression: "C.H. Lowe" was family).
 		{"C.H. Lowe, O.H. Soule", 2, "Lowe", "C. H."},
 		{"W.J. Cody, R.D.M. Page", 2, "Cody", "W. J."},
+		// Display-order list where first name has a full given word before the initial.
+		{"Guy C. Joslin, P. Werner", 2, "Joslin", "Guy C."},
 		// ORCID stripped
 		{"Smith, J. ORCID 0000-0001-2345-6789", 1, "Smith", "J."},
 		{"Smith, J. 0000-0001-2345-6789", 1, "Smith", "J."},
