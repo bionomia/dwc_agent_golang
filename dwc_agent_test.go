@@ -305,11 +305,64 @@ func TestCleanGivenAllCaps(t *testing.T) {
 }
 
 func TestCleanGivenTooLong(t *testing.T) {
-	given := strings.Repeat("a", 36)
+	// Both family and given must be < 40 characters.
+	given := strings.Repeat("a", 40)
 	n := dwcagent.Name{Family: sp("Smith"), Given: &given}
-	cleaned := dwcagent.Clean(n)
-	if !cleaned.IsDefault() {
-		t.Errorf("given too long: expected Default(), got %+v", cleaned)
+	if !dwcagent.Clean(n).IsDefault() {
+		t.Errorf("given 40 chars: expected Default()")
+	}
+	// 39 characters is still accepted.
+	given39 := strings.Repeat("a", 39)
+	n2 := dwcagent.Name{Family: sp("Smith"), Given: &given39}
+	if dwcagent.Clean(n2).IsDefault() {
+		t.Errorf("given 39 chars: should be accepted, got Default()")
+	}
+}
+
+func TestCleanFamilyTooLong(t *testing.T) {
+	fam := strings.Repeat("a", 40)
+	n := dwcagent.Name{Family: &fam}
+	if !dwcagent.Clean(n).IsDefault() {
+		t.Errorf("family 40 chars: expected Default()")
+	}
+}
+
+func TestCleanFamilyTooManySpaces(t *testing.T) {
+	// Family must not have more than 2 spaces.
+	n3 := dwcagent.Name{Family: sp("van der Berg Sr"), Given: sp("Jan")}
+	if !dwcagent.Clean(n3).IsDefault() {
+		t.Errorf("family 3 spaces: expected Default()")
+	}
+	// 2 spaces (e.g. particle + family) is still accepted.
+	n2 := dwcagent.Name{Family: sp("van der Berg"), Given: sp("Jan")}
+	if dwcagent.Clean(n2).IsDefault() {
+		t.Errorf("family 2 spaces: should be accepted, got Default()")
+	}
+}
+
+func TestCleanFamilyTooManyPeriods(t *testing.T) {
+	// Family must not have more than 4 periods.
+	n5 := dwcagent.Name{Family: sp("A.B.C.D.E."), Given: sp("John")}
+	if !dwcagent.Clean(n5).IsDefault() {
+		t.Errorf("family 5 periods: expected Default()")
+	}
+	// 4 periods is still accepted.
+	n4 := dwcagent.Name{Family: sp("A.B.C.D."), Given: sp("John")}
+	if dwcagent.Clean(n4).IsDefault() {
+		t.Errorf("family 4 periods: should be accepted, got Default()")
+	}
+}
+
+func TestCleanGivenTooManyPeriods(t *testing.T) {
+	// Given must not have more than 5 periods.
+	n6 := dwcagent.Name{Family: sp("Smith"), Given: sp("A.B.C.D.E.F.")}
+	if !dwcagent.Clean(n6).IsDefault() {
+		t.Errorf("given 6 periods: expected Default()")
+	}
+	// 5 periods is still accepted.
+	n5 := dwcagent.Name{Family: sp("Smith"), Given: sp("A.B.C.D.E.")}
+	if dwcagent.Clean(n5).IsDefault() {
+		t.Errorf("given 5 periods: should be accepted, got Default()")
 	}
 }
 

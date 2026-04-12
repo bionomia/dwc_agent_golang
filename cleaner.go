@@ -56,9 +56,30 @@ func Clean(n Name) Name {
 		return Default()
 	}
 
-	// 4. Given too long (>35 runes).
-	if n.Given != nil && len([]rune(*n.Given)) > 35 {
-		return Default()
+	// 4. Length, space, and period limits.
+	//    Both family and given must be < 40 characters.
+	//    Family must have ≤ 2 spaces and ≤ 4 periods.
+	//    Given must have ≤ 5 periods.
+	if n.Family != nil {
+		fam := *n.Family
+		if len([]rune(fam)) >= 40 {
+			return Default()
+		}
+		if strings.Count(fam, " ") > 2 {
+			return Default()
+		}
+		if strings.Count(fam, ".") > 4 {
+			return Default()
+		}
+	}
+	if n.Given != nil {
+		giv := *n.Given
+		if len([]rune(giv)) >= 40 {
+			return Default()
+		}
+		if strings.Count(giv, ".") > 5 {
+			return Default()
+		}
 	}
 
 	// 5. Given has ≥3 dots and matches suspicious pattern.
