@@ -3,6 +3,7 @@ package dwcagent
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -512,14 +513,41 @@ func isDisplayOrderList(seg string) bool {
 			hasInitialsPrefix = true
 		}
 	}
-	// For small lists (≤3 items): require ALL items match AND at least one has an
-	// initials prefix. This prevents "Puttock, C.F. James, S.A." (two concatenated
-	// sort-order names) from being misidentified as a display-order list.
-	// For larger lists (≥4 items): require at least 2/3 matching with an initials prefix.
-	if len(cleaned) <= 3 {
-		return matched == len(cleaned) && hasInitialsPrefix
+
+	// hasMultiWord is true when every part starts with an uppercase letter AND
+	// at least TWO parts contain two or more whitespace-separated words.
+	// Requiring ≥2 multi-word parts prevents false positives on sort-order names
+	// like "Smith, John Leo" (only one part has ≥2 words) or "Mortensen, Agnes Mols"
+	// while still detecting true display-order lists like
+	// "Rolf-Göran Carlsson, Eva Grundel, Elisabeth Jansson" (all 3 parts have ≥2 words).
+	// The all-uppercase-start guard rejects particle-prefixed sort-order names like
+	// "de Jussieu, Antoine Laurent" where "de" starts with a lowercase letter.
+	hasMultiWord := false
+	allStartUpper := true
+	for _, p := range cleaned {
+		runes := []rune(p)
+		if len(runes) == 0 || !unicode.IsUpper(runes[0]) {
+			allStartUpper = false
+			break
+		}
 	}
-	return matched >= 2 && matched*3 >= len(cleaned)*2 && hasInitialsPrefix
+	if allStartUpper {
+		multiWordCount := 0
+		for _, p := range cleaned {
+			if len(strings.Fields(p)) >= 2 {
+				multiWordCount++
+			}
+		}
+		hasMultiWord = multiWordCount >= 2
+	}
+
+	// For small lists (≤3 items): require ALL items match AND either an initials
+	// prefix exists OR the list is unambiguously display-order (hasMultiWord).
+	// For larger lists (≥4 items): same guard with relaxed match threshold.
+	if len(cleaned) <= 3 {
+		return matched == len(cleaned) && (hasInitialsPrefix || hasMultiWord)
+	}
+	return matched >= 2 && matched*3 >= len(cleaned)*2 && (hasInitialsPrefix || hasMultiWord)
 }
 
 // sortOrderListItemRe matches a sort-order name token: "Harkness, W.J.K."

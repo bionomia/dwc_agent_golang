@@ -1273,6 +1273,12 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		{"W.J. Cody, R.D.M. Page", 2, "Cody", "W. J."},
 		// Display-order list where first name has a full given word before the initial.
 		{"Guy C. Joslin, P. Werner", 2, "Joslin", "Guy C."},
+		// Display-order list with full given+family names and no initials.
+		// A comma between full names is unambiguously a list separator (not sort-order)
+		// when every part starts uppercase and has ≥2 words.
+		{"Rolf-Göran Carlsson, Eva Grundel, Elisabeth Jansson", 3, "Carlsson", "Rolf-Göran"},
+		// Mixed semicolon+comma separators: semicolon splits first, then comma-list detected.
+		{"Charles Allen; Marc Pastorek, Peter Loos, David Lewis", 4, "Allen", "Charles"},
 		// ORCID stripped
 		{"Smith, J. ORCID 0000-0001-2345-6789", 1, "Smith", "J."},
 		{"Smith, J. 0000-0001-2345-6789", 1, "Smith", "J."},
