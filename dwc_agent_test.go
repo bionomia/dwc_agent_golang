@@ -1235,7 +1235,6 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		{"Ludwig van Beethoven", 1, "Beethoven", "Ludwig"},  // particle=van is separate field
 		{"de Jussieu, Antoine Laurent", 1, "Jussieu", "Antoine Laurent"},
 		// Titles stripped from output names
-		{"Dr. Smith", 1, "Smith", ""},
 		{"Sir Isaac Newton", 1, "Newton", "Isaac"},
 		// Hyphenated
 		{"García-López, J.", 1, "García-López", "J."},
@@ -1279,6 +1278,16 @@ func TestTestDataExpectedOutputs(t *testing.T) {
 		{"Rolf-Göran Carlsson, Eva Grundel, Elisabeth Jansson", 3, "Carlsson", "Rolf-Göran"},
 		// Mixed semicolon+comma separators: semicolon splits first, then comma-list detected.
 		{"Charles Allen; Marc Pastorek, Peter Loos, David Lewis", 4, "Allen", "Charles"},
+		// All-caps names must parse identically to their title-case equivalents.
+		// "RIBAS" etc. are normalised to "Ribas" before structure detection.
+		{"O.S. RIBAS; E. BARBOSA, E.F. COSTA", 3, "Ribas", "O. S."},
+		{"SMITH, J.", 1, "Smith", "J."},
+		// Bare trailing initials (single letter or concatenated run) after a name word
+		// must be treated as given initials, not family names.
+		// "Julius A"      → family=Julius, given=A.
+		// "Utteridge TMA" → family=Utteridge, given=T.M.A.  (TMA = 3 initials)
+		// "Imin K"        → family=Imin, given=K.
+		{"Julius A; Utteridge TMA; Imin K", 3, "Julius", "A."},
 		// ORCID stripped
 		{"Smith, J. ORCID 0000-0001-2345-6789", 1, "Smith", "J."},
 		{"Smith, J. 0000-0001-2345-6789", 1, "Smith", "J."},

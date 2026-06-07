@@ -3,9 +3,33 @@ package dwcagent
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var extraSpaceRe = regexp.MustCompile(`\s{2,}`)
+
+// allCapsWordRe matches a run of 5+ uppercase ASCII letters forming a whole word.
+// We use 5+ (not 2+) so that short all-caps tokens like "TMA" (concatenated initials),
+// "BERG", "CODY" (4-letter family names) are left for expand() and nc() to handle.
+// Only words of 5+ chars like "RIBAS", "BARBOSA" need early normalisation so that
+// structure-detection regexes (which expect a lowercase letter after the first uppercase)
+// work correctly regardless of input capitalisation.
+var allCapsWordRe = regexp.MustCompile(`\b[A-Z]{5,}\b`)
+
+// normaliseAllCaps title-cases every all-uppercase word in s so that subsequent
+// parsing logic (which uses lowercase letters to detect family names) works
+// identically whether the collector entered "O.S. RIBAS" or "O.S. Ribas".
+// Mixed-case words (e.g. "McDonald") and dotted initials ("O.S.") are left alone.
+func normaliseAllCaps(s string) string {
+	return allCapsWordRe.ReplaceAllStringFunc(s, func(w string) string {
+		runes := []rune(w)
+		runes[0] = unicode.ToUpper(runes[0])
+		for i := 1; i < len(runes); i++ {
+			runes[i] = unicode.ToLower(runes[i])
+		}
+		return string(runes)
+	})
+}
 
 // Parse cleanses the input string and returns a slice of parsed Names.
 // Mirrors DwcAgent.parse in the Ruby gem.
@@ -18,6 +42,11 @@ func Parse(input string) []Name {
 
 	// 1. Strip noise tokens.
 	s = stripOut(s)
+
+	// 1b. Normalise all-caps words to title-case ("RIBAS" → "Ribas") so that
+	//     name-structure detection (DOL, sort-order, etc.) is case-insensitive.
+	//     Single uppercase letters and dotted initials are unaffected.
+	s = normaliseAllCaps(s)
 
 	// 2. Tidy remaining content.
 	s = postStripTidy(s)

@@ -47,6 +47,13 @@ var (
 	singleInitBetweenWordsRe = regexp.MustCompile(
 		`^([A-Z][a-z]+)\s+([A-Z])\s+([A-Z][a-z]+)$`)
 
+	// singleDottedInitRe matches a single dotted initial like "A." or "K.".
+	// Used to detect a trailing initial that was expanded from a bare uppercase.
+	singleDottedInitRe = regexp.MustCompile(`^[A-Z]\.$`)
+
+	// dottedInitialsRe matches one or more dotted initials like "T.M.A." or "W.J.".
+	dottedInitialsRe = regexp.MustCompile(`^(?:[A-Z]\.){1,}$`)
+
 	// hyphenatedGivenRe detects "Hsuan-Ching" style — hyphenated multi-part
 	// given name that got separated into two tokens by the pipe splitter.
 	// This fires in parseDisplayOrder when a lone hyphenated token appears.
@@ -200,6 +207,39 @@ func parseDisplayOrder(s string) Name {
 	}
 
 	// Default: last token = family, rest = given.
+	// Exception: if the last token is a dotted single initial (e.g. "A.", "K.") or a
+	// run of dotted initials (e.g. "T.M.A." after TMA was expanded), and there is at
+	// least one preceding non-initial word, that word is the family name and all the
+	// initial tokens form the given. This handles:
+	//   "Julius A"      → tokens ["Julius","A."]      → family=Julius, given=A.
+	//   "Utteridge TMA" → tokens ["Utteridge","T.","M.","A."] → family=Utteridge, given=T.M.A.
+	//   "Imin K"        → tokens ["Imin","K."]         → family=Imin, given=K.
+	if len(tokens) >= 2 {
+		last := tokens[len(tokens)-1]
+		isTrailingInit := singleDottedInitRe.MatchString(last) || dottedInitialsRe.MatchString(last)
+		if isTrailingInit {
+			// Find the last non-initial token — that is the family name.
+			lastNonInit := -1
+			for i := len(tokens) - 2; i >= 0; i-- {
+				if !singleDottedInitRe.MatchString(tokens[i]) && !dottedInitialsRe.MatchString(tokens[i]) {
+					lastNonInit = i
+					break
+				}
+			}
+			if lastNonInit >= 0 {
+				n.Family = strPtr(tokens[lastNonInit])
+				// Given = all tokens except the family, condensed.
+				givenTokens := make([]string, 0, len(tokens)-1)
+				givenTokens = append(givenTokens, tokens[:lastNonInit]...)
+				givenTokens = append(givenTokens, tokens[lastNonInit+1:]...)
+				givenRaw := strings.Join(givenTokens, " ")
+				if givenRaw != "" {
+					n.Given = strPtr(condenseInitials(givenRaw))
+				}
+				return n
+			}
+		}
+	}
 	n.Family = strPtr(tokens[len(tokens)-1])
 	givenRaw := strings.Join(tokens[:len(tokens)-1], " ")
 	if givenRaw != "" {
@@ -273,8 +313,10 @@ func extractLeadingParticle(tokens []string) ([]string, string) {
 //   "FAH"       → ["F.", "A.", "H."]
 //   "JH"        → ["J.", "H."]
 //   ["A","Y"]   → ["A.", "Y."]   (single bare caps in a multi-token list)
+//   ["Julius","A"]      → ["Julius","A."]   (trailing initial after name word)
+//   ["Utteridge","TMA"] → ["Utteridge","T.","M.","A."]  (trailing run after name word)
 // Does NOT expand the last token when it looks like a genuine family name
-// (5+ chars, or mixed with non-caps tokens that are not initials).
+// (5+ chars, mixed-case, or the only token with no preceding word).
 func expandCapsInitials(tokens []string) []string {
 	if len(tokens) == 0 {
 		return tokens
@@ -289,21 +331,39 @@ func expandCapsInitials(tokens []string) []string {
 	}
 	allAreCaps := capsCount == len(tokens)
 
+	// Detect whether the last token is a trailing initial: a bare uppercase (1-4 chars)
+	// that follows at least one non-caps word. In "Julius A" or "Utteridge TMA" the
+	// bare cap/caps-run is the given initial, not the family name.
+	trailingInitial := false
+	if len(tokens) >= 2 && !allAreCaps {
+		last := tokens[len(tokens)-1]
+		if singleCapRe.MatchString(last) || allCapsInitialsRe.MatchString(last) {
+			// Check that at least one preceding token is a "real" word (not a caps token)
+			for _, t := range tokens[:len(tokens)-1] {
+				if !singleCapRe.MatchString(t) && !allCapsInitialsRe.MatchString(t) {
+					trailingInitial = true
+					break
+				}
+			}
+		}
+	}
+
 	out := make([]string, 0, len(tokens)+4)
 	for i, tok := range tokens {
 		isLast := i == len(tokens)-1
 
 		if singleCapRe.MatchString(tok) {
 			// Single bare cap: always expand to dotted initial when not last,
-			// or when all tokens are caps-style.
-			if !isLast || allAreCaps {
+			// or when all tokens are caps-style, or when it's a trailing initial.
+			if !isLast || allAreCaps || trailingInitial {
 				out = append(out, tok+".")
 				continue
 			}
 		}
 		if allCapsInitialsRe.MatchString(tok) {
-			// 2–4 all-caps: expand when not last, or all are caps, or only 2 chars.
-			if !isLast || allAreCaps || len(tok) <= 2 {
+			// 2–4 all-caps: expand when not last, or all are caps, or only 2 chars,
+			// or when it's a trailing initial after a real word.
+			if !isLast || allAreCaps || len(tok) <= 2 || trailingInitial {
 				for _, r := range tok {
 					out = append(out, string(r)+".")
 				}
