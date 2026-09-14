@@ -10,7 +10,7 @@ package dwcagent_test
 import (
 	"testing"
 
-	dwcagent "github.com/bionomia/dwc_agent"
+	dwcagent "github.com/bionomia/dwc_agent_golang"
 )
 
 // Representative sample of real-world recordedBy strings from GBIF,

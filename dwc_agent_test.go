@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	dwcagent "github.com/bionomia/dwc_agent"
+	dwcagent "github.com/bionomia/dwc_agent_golang"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────

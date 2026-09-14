@@ -18,7 +18,7 @@ import (
 	"log"
 	"net/http"
 
-	dwcagent "github.com/bionomia/dwc_agent"
+	dwcagent "github.com/bionomia/dwc_agent_golang"
 )
 
 var flagPort = flag.String("port", "7654", "Port to listen on")

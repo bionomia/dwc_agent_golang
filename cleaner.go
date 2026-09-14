@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/bionomia/dwc_agent/internal/namecase"
+	"github.com/bionomia/dwc_agent_golang/internal/namecase"
 )
 
 // Clean post-processes a parsed Name to produce a well-formed Darwin Core name.
